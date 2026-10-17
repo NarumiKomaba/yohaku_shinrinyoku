@@ -12,7 +12,7 @@
 
 ### 記録されるログ
 
-**ファイル**: `data/logs/events.jsonl`（1 イベント = 1 行）
+**保存先**: Firestore の `envs/{STORE_NAMESPACE}/eventBatches/{時刻}-{乱数}`（1 回の書き込み = 1 ドキュメント `{ day, ts, n, types, events }`。`day` は日本時間の日付）。ファイル版（テスト・`start:offline`）は `data/logs/events.jsonl`（1 イベント = 1 行）
 
 イベント種別（`type` フィールド）:
 - `session_start` — ウォーク開始
@@ -34,19 +34,12 @@
 
 **自由記述テキストの制限**: チェックイン note、質問、ふりかえりは **200 文字以内** に自動カット
 
-### 購入履歴・チェックイン
+### 購入（モック）
 
-**ファイル**: `data/logs/purchases.json`
+**保存先**: Firestore の `envs/{STORE_NAMESPACE}/purchases/{コード}`（ファイル版は `data/logs/purchases.json`）。デモコードは保存せず、使ったことを `purchase` イベント（`demoCode: true`）で残す
 
 ```json
-{
-  "code": "DEMO2027",
-  "count": 5,           // 使用回数
-  "lastUsed": "2026-10-04T12:34:56.789Z",
-  "checkins": [
-    { "sessionId": "...", "lang": "ja", "timestamp": "...", "checkin": {...} }
-  ]
-}
+{ "code": "KG-1A2B3C", "plan": "ai40", "lang": "ja", "priceJpy": 2000, "createdAt": "2026-10-04T12:34:56.789Z", "usedAt": null }
 ```
 
 ## コスト管理
@@ -69,8 +62,9 @@
 - `LLM_DAILY_MAX`・`NARRATE_MAX_PER_SESSION`・`ASK_MAX_PER_SESSION`・`SESSIONS_PER_CODE_DAILY` が 1 以上
 - `TRUSTED_PROXY_HOPS` が 1 以上（Cloud Run 直結は 1。前にロードバランサーを置くなら 2）
 - `PURCHASE_ENABLED=1` ではない（購入のモックは誰でもコードを発行でき、上限も効かないため、公開では使えない）
+- `STORE_BACKEND=firestore`、`FIRESTORE_PROJECT_ID` があり、`STORE_NAMESPACE` が `local` 以外の正しい形（英小文字で始まる英小文字・数字・-）。`SPOTS_NAMESPACE` を入れるなら同じ形。起動時には Firestore につながない（つながるかは最初の記録で分かる）
 
-公開では、次の上限が既定で入ります（環境変数で変えられます）: 1 つの接続元で 1 日 20 体験（`SESSIONS_PER_IP_DAILY`）、1 回の体験で体験中の API を 1 分 30 回・1 日 300 回（`WALK_CALLS_PER_MIN`・`WALK_CALLS_PER_DAY`）、利用ログは 1 日 20MB まで（`EVENTS_DAILY_BYTES`）。
+公開では、次の上限が既定で入ります（環境変数で変えられます）: 1 つの接続元で 1 日 20 体験（`SESSIONS_PER_IP_DAILY`）、1 回の体験で体験中の API を 1 分 30 回・1 日 300 回（`WALK_CALLS_PER_MIN`・`WALK_CALLS_PER_DAY`）、利用ログは 1 日 20MB・15000 回まで（`EVENTS_DAILY_BYTES`・`EVENTS_DAILY_WRITES`）。
 
 | 変数 | おすすめ | 効果 |
 |---|---|---|
@@ -97,7 +91,8 @@
 ### Cloud Run で動かすとき
 
 - **インスタンスは最大 1**（`--max-instances 1`）。ログイン状態や上限の回数をメモリに持つため、複数に分かれるとログインが切れ、上限も正しく数えられない
-- **データは残らない**: Cloud Run のファイルはメモリ上にあり、インスタンスが止まると消える。ガイドさんページで編集した Spot、`events.jsonl`、`purchases.json` は再起動で元に戻る（お試し版はそれでよい）
+- **記録は Firestore に残す**: `STORE_BACKEND=firestore`・`FIRESTORE_PROJECT_ID=yohaku-shinrinyoku`・`STORE_NAMESPACE=preview`・`SPOTS_NAMESPACE=preview`。トークンは実行アカウント（メタデータサーバー）から取るので、実行アカウントに `roles/datastore.user` が要る。イメージには knowledge.json・scenario.json だけが入る（読み取り専用）
+- **止めるとき**: SIGTERM で受け付けをやめ、書きかけのログと、Firestore が止まっていた間に持ち越したイベントを最大 5 秒待って書く
 - 秘密の値（`GEMINI_API_KEY`・`DEMO_CODES`・`GUIDE_PASSCODE`）は `--set-secrets` で Secret Manager から渡す（`--set-env-vars` だとリビジョンの設定に平文で残る）
 
 ### コスト計算式
@@ -114,7 +109,7 @@
 
 ### LLM 使用ログ
 
-**ファイル**: `data/logs/events.jsonl` の `type: 'llm_usage'` イベント
+**保存先**: 利用ログ（上の「記録されるログ」）の `type: 'llm_usage'` イベント
 
 ```json
 {
@@ -128,13 +123,83 @@
 }
 ```
 
+## Firestore（記録の保存先）
+
+GCP プロジェクト `yohaku-shinrinyoku` の Firestore（Native モード、asia-northeast1、`(default)`）。REST で読み書きし、外部ライブラリは使わない。
+
+```
+envs/{ns}/eventBatches/{ms13 桁}-{乱数 8 桁}   利用ログ（1 回の書き込み = 1 ドキュメント）
+envs/{ns}/purchases/{コード}                  購入（モック）
+envs/{ns}/recordings/{id}                     録音ウォーク（状態と候補）
+envs/{ns}/recordings/{id}/chunks/{番号 6 桁}   録音ウォークの文字起こしと軌跡（終わったら軌跡は消す）
+envs/{spotsNs}/data/spots                     Spot と素材（1 ドキュメント、900KB まで。超えたら 413）
+envs/{spotsNs}/spotsHistory/{ms13 桁}          Spot の古い版（新しい 20 個）
+```
+
+- **名前空間**: `ns` = `STORE_NAMESPACE`（パソコンの `npm start` は `local`、お試し版は `preview`）、`spotsNs` = `SPOTS_NAMESPACE`（パソコンもお試し版と同じ `preview` を読み書きする）
+- **索引**: 集計は `day` の範囲検索だけなので、自動の単一フィールド索引で動く（複合索引は要らない）。大きな配列・map の項目は検索に使わないので、単一フィールド索引から外している（書き込みの量と費用を抑え、索引の上限にかからないように）:
+
+  | コレクショングループ | 項目 |
+  |---|---|
+  | `eventBatches` | `events` |
+  | `data` | `spots` |
+  | `spotsHistory` | `spots` |
+  | `chunks` | `track`・`segments` |
+  | `recordings` | `candidates` |
+
+  ```bash
+  CLOUDSDK_ACTIVE_CONFIG_NAME=shinrinyoku gcloud firestore indexes fields update events --collection-group=eventBatches --disable-indexes
+  # data/spots、spotsHistory/spots、chunks/track、chunks/segments、recordings/candidates も同じように
+  ```
+- **セキュリティルール**: 全部拒否にする（ブラウザから直接は触らせない。サーバーは IAM で読み書きする）
+- **ローカルの認証**: `gcloud auth print-access-token` を gcloud の設定 `shinrinyoku`（`GCLOUD_CONFIG`。`FIRESTORE_AUTH=gcloud` では必須で、空なら起動しない）で実行する。会社用の既定の設定や ADC は使わない。シェルは通さず、Windows では gcloud の場所を 1 回だけ調べ（作業フォルダの中の gcloud は使わない）、`cmd.exe /d /s /c` で動かす。トークンは 50 分使い回し、401 なら 1 回だけ取り直す。起動時に先に取っておく（gcloud のときだけ）
+- **公開の認証**: 公開（`NODE_ENV=production` か Cloud Run）では `FIRESTORE_AUTH` は `metadata`（未設定なら `metadata`）でないと起動しない。メタデータサーバーのトークンは期限の 5 分前（短いトークンは期限の半分）まで使い回す
+- **共有の Spot は合言葉が強いときだけ保存できる**: `npm start` は Spot をお試し版と共有する（`SPOTS_NAMESPACE`=`preview` が `STORE_NAMESPACE`=`local` と違う）。このとき合言葉（`GUIDE_PASSCODE`）が既定（`GAIEN-GUIDE`）か 16 文字より短いと、Spot は読むだけになる（保存・削除は 403 `shared_spots_read_only`。起動時に 1 行お知らせを出す）。`npm run start:lan` は、この状態では起動しない
+- **パソコンの合言葉**: `npm start` は `GUIDE_PASSCODE` がなければ、お試し版と同じ合言葉を `SHINRINYOKU_PREVIEW_ENV`（既定 `~/.secrets/shinrinyoku/preview.env`）の `GUIDE_PASSCODE=...` の行から読む（表示しない。ファイルがなければ既定の合言葉のまま＝Spot は読むだけ）。`npm run start:lan` はファイルから読まない（LAN で保存するなら `GUIDE_PASSCODE` を環境変数で渡す）。パソコンで `local` 以外の名前空間の Spot を直接使うとき（`STORE_NAMESPACE=preview` など）も、合言葉が弱ければ読むだけ
+- **パソコンのサーバーはほかのサイトから使わせない**: ループバック（`127.0.0.1` など）で待ち受けているときは、`Host` が `localhost`・`127.0.0.1`・`[::1]` 以外のリクエストを 421 で断る（DNS リバインディング対策）
+- **集計**: `/api/stats?days=N`（既定 7、1〜90）。読むのは最大 `STATS_MAX_DOCS`（1000）ドキュメント・応答の合計 50MB まで（100 件ずつ読み、読んだそばから変換する）で、超えたら新しい分だけを集計して集計ページに「一部だけ集計」と出す（購入の一覧が上限 5000 件に届いたときも）。結果は `STATS_CACHE_SEC`（300 秒）使い回す
+- **Spot の使い回し**: `SPOTS_CACHE_SEC`（30 秒）。自分のインスタンスで保存したらすぐ反映。ほかのインスタンス（パソコンとお試し版）の保存は最大 30 秒遅れて見える。同時に保存が重なったら 1 回だけやり直し、だめなら 409 `spots_conflict`
+
+### Firestore が止まったとき
+
+| 機能 | 動き |
+|---|---|
+| 利用ログ（`/api/events` など） | 200 で `accepted: 0`。最大 500 イベントをメモリに残し、次に書けたときと終了時に書き直す |
+| Spot を読む（体験・ガイドさんページ） | 最後に読めた内容を最大 1 時間使う。なければ 503 `store_unavailable` |
+| デモコードで始める | そのまま通る（Firestore を読まない） |
+| 購入の発行・購入コードの確認 | 503 `store_unavailable`（失敗の回数には数えない） |
+| ガイドさんの保存・録音ウォーク・集計 | 503 `store_unavailable` |
+
+通信は 5 秒で打ち切り、429・500・503・ABORTED・UNAVAILABLE・通信エラーだけ 200ms・600ms あけて最大 2 回やり直す。サーバーのログには `[store] commit 503 UNAVAILABLE` のようにコードだけを出す（中身・トークンは出さない）。
+
+### 無料枠と上限
+
+Firestore の無料枠は 1 日に読み取り 5 万・書き込み 2 万・削除 2 万、保存 1 GiB。
+- 書き込み: 利用ログは 1 回の書き込み = 1 ドキュメントにまとめ、`EVENTS_DAILY_WRITES`（公開の既定 15000）で止める
+- 保存: `EVENTS_DAILY_BYTES` の公開の既定 20MB のままだと、毎日上限まで書かれた場合に 2 か月ほどで 1 GiB を超える。お試し版では `EVENTS_DAILY_BYTES=5000000`（5MB、約 7 か月分）に下げることをすすめる
+- 読み取り: 集計は 1 回で最大 1000 ドキュメント読むので、`STATS_CACHE_SEC` で使い回す
+- 書き込みのやり直し: 読み込みは失敗したらやり直す。書き込みは、やり直して「もう書けていた」になっても扱えるもの（イベント・購入・録音）だけやり直す。Spot の保存はやり直さない（失敗したらガイドさんがもう一度保存する）
+
+### 移行
+
+`--logs` は、移す元（パソコンの `data/logs/`）への書き込みが止まってから 1 回だけ流す（書いている途中で流すと、増えた日のまとめが重なって書かれることがある）。Firestore 版で読める番号を超える録音の chunk は移さず、その数を表示する。
+`--spots-from` の URL は `https://` だけ。Spot はガイドさんページの保存と同じ検査・整形を通す。お試し版（`--namespace preview`）に書くときは `--yes` が要る（先に `--dry-run`）。利用ログは日ごとに 100 件ずつ、中身のハッシュを ID にして書く（流し直しても重ならない。あとから増えた日は、変わったまとめだけ書く）。Firestore に書けないイベントは捨て、その数を表示する。
+
+```bash
+# お試し版の今の Spot を移す（すでにあれば --force なしでは上書きしない）
+FIRESTORE_PROJECT_ID=yohaku-shinrinyoku GCLOUD_CONFIG=shinrinyoku \
+  npm run migrate -- --namespace preview --spots-from https://<お試し版の URL>/api/data/spots --dry-run
+# ファイル版の記録（data/logs/）も移す。何度流しても 2 重にならない
+FIRESTORE_PROJECT_ID=yohaku-shinrinyoku GCLOUD_CONFIG=shinrinyoku npm run migrate -- --namespace local --logs
+```
+
 ## バックアップ
 
 ### 自動バックアップ
 
-**タイミング**: `data/spots.json` 更新時（ガイドさんページで保存したとき）
+**タイミング**: Spot を保存したとき（ガイドさんページで保存したとき）
 
-**ファイル名**: `data/logs/spots.backup-{timestamp}.json`
+**保存先**: Firestore は `envs/{spotsNs}/spotsHistory/{ミリ秒}`（新しい 20 個）。ファイル版は `data/logs/spots.backup-{timestamp}.json`
 
 **例**:
 ```
@@ -210,7 +275,7 @@ Digital Nature & Wellness Instructor — http://localhost:3000
 ### ログ分析（簡易版）
 
 ```bash
-# イベント総数
+# （ファイル版）イベント総数。Firestore 版は /admin.html か /api/stats?days=N で見る
 wc -l data/logs/events.jsonl
 
 # Gemini 呼び出し回数
@@ -268,13 +333,16 @@ node scripts/seed-demo.js              # 実行（既存 Spot 保持、マージ
 
 古い Spot データに戻す:
 ```bash
-# backup から復元
+# ファイル版: backup から復元
 cp data/logs/spots.backup-{古いタイムスタンプ}.json data/spots.json
-npm start
+npm run start:offline
+
+# Firestore 版: Firebase コンソールで spotsHistory の版を開き、{ version, spots } を JSON ファイルにして書き戻す（今の内容は履歴に残る）
+FIRESTORE_PROJECT_ID=yohaku-shinrinyoku GCLOUD_CONFIG=shinrinyoku npm run migrate -- --namespace preview --spots-from old-spots.json --force
 ```
 
 ---
 
 **最終更新**: 2026-10-04  
 **バージョン**: Phase 1 Prototype
-- **データ**: Cloud Run のファイルはメモリ上にあり、インスタンスが止まると消える。最大インスタンス数は 1 にする（ログイン状態と上限の数え方がメモリにあるため）。バックアップは 1 ファイルにつき新しい 20 個まで
+- **データ**: 記録と Spot は Firestore に残る（インスタンスが止まっても消えない）。最大インスタンス数は 1 にする（ログイン状態と上限の数え方がメモリにあるため）。Spot の古い版は新しい 20 個まで

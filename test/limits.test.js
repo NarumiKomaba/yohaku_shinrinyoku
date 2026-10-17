@@ -95,3 +95,30 @@ test('failureLimiter_globalCap_onlyBlocksSourcesThatFailed', () => {
   assert.throws(() => lim.check('a'), (e) => e.status === 429, '失敗したことのある接続元は止める');
   lim.check('fresh'); // 失敗していない人は通す
 });
+
+test('failureLimiter_undo_takesBackOneFailure', () => {
+  const t = 0;
+  const lim = createFailureLimiter({ max: 2, windowMs: 1000, now: () => t });
+  lim.fail('a');
+  lim.fail('a');
+  assert.throws(() => lim.check('a'), (e) => e.status === 429);
+  lim.undo('a'); // 先に数えた失敗が、正しいコードだった
+  lim.check('a');
+  lim.undo('zzz'); // 失敗していない key は何もしない
+  lim.check('zzz');
+});
+
+test('failureLimiter_undo_alsoTakesBackGlobalCount', () => {
+  const t = 0;
+  const lim = createFailureLimiter({ max: 100, globalMax: 2, windowMs: 1000, now: () => t });
+  lim.fail('a');
+  lim.fail('b');
+  assert.throws(() => lim.check('a'), (e) => e.status === 429);
+  lim.undo('b');
+  lim.check('a'); // 全体の失敗が 1 回に戻った
+  lim.fail('b');
+  lim.fail('c');
+  lim.undo('c');
+  assert.throws(() => lim.check('a'), (e) => e.status === 429);
+  lim.check('c'); // 取り消して 0 回になった key は、全体の上限でも止めない
+});

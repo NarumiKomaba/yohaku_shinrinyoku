@@ -4,7 +4,8 @@
 
 const { MODEL, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
-const { readData, appendEvents } = require('../lib/store');
+const { getSpots, appendEvents } = require('../lib/store');
+const { readStatic } = require('../lib/static-data');
 const { requireSession } = require('../lib/auth');
 const { callGemini, parseJson, costJpy } = require('../lib/gemini');
 const { retrieve, tokens, overlap, season, timeOfDay } = require('../lib/knowledge');
@@ -140,7 +141,7 @@ usedMaterialIds lists the ids of materials you drew on in "say".`;
 // 未使用の素材が尽きそうなとき、「違う角度」の材料として渡す一般知識（この Spot に紐づくもの＋関心に合うもの）
 function knowledgeFor(spot, ci) {
   const q = tokens([ci && ci.note, spot.name.ja, spot.kind].join(' '));
-  return readData('knowledge.json').chunks
+  return readStatic('knowledge.json').chunks
     .map((c) => ({ c, score: ((c.spots || []).includes(spot.id) ? 3 : 0) + overlap(q, [c.title.ja, c.text.ja, ...(c.tags || [])].join(' ')) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
@@ -297,10 +298,11 @@ module.exports = {
     if (!q) throw httpError(400, 'empty');
 
     const date = clientTime ? new Date(clientTime) : new Date();
-    const spot = spotId ? readData('spots.json').spots.find((x) => x.id === spotId) : null;
+    const { spots } = await getSpots();
+    const spot = spotId ? spots.find((x) => x.id === spotId) : null;
     const knowledge = retrieve(q, { spotId, seasonName: season(date) }); // フォールバックと sources 用
-    const allSpots = readData('spots.json').spots.filter((x) => x.enabled !== false);
-    const allKnowledge = readData('knowledge.json').chunks;
+    const allSpots = spots.filter((x) => x.enabled !== false);
+    const allKnowledge = readStatic('knowledge.json').chunks;
     const contents = [
       ...history.slice(-6).map((h) => ({ role: h && h.role === 'model' ? 'model' : 'user', parts: [{ text: clip(h && h.text, 500) }] })),
       { role: 'user', parts: [{ text: q }] },
@@ -309,10 +311,10 @@ module.exports = {
       if (ASK_MAX_PER_SESSION && bump(askCounts, s.sessionId) > ASK_MAX_PER_SESSION) throw new Error('ask limit');
       const t0 = Date.now();
       const { text, usage } = await callGemini({ system: askSystemPrompt({ lang, spot, spots: allSpots, checkin, date, knowledge: allKnowledge }), contents });
-      appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'ask', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0, ...(LOG_QUESTION_TEXT ? { question: q } : {}) }]);
+      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'ask', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0, ...(LOG_QUESTION_TEXT ? { question: q } : {}) }]);
       return { answer: text || fallbackAnswer(lang, knowledge), sources: knowledge.map((c) => c.id) };
     } catch (e) {
-      appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-ask', message: e.message }]);
+      await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-ask', message: e.message }]);
       return { answer: fallbackAnswer(lang, knowledge), sources: knowledge.map((c) => c.id), fallback: true };
     }
   },
@@ -330,6 +332,7 @@ module.exports = {
     const { durationMin: curDuration, ...curRest } = cleanCheckin(raw0);
     const cur = has(raw0, 'durationMin') ? { ...curRest, durationMin: curDuration } : curRest;
     const t0 = Date.now();
+    const events = []; // 最後に 1 回で書く
     let raw;
     let fallback = false;
     try {
@@ -337,11 +340,11 @@ module.exports = {
         system: checkinSystemPrompt(lang), contents: [{ role: 'user', parts: [{ text: JSON.stringify({ transcript, current: cur }) }] }],
         json: true, maxTokens: 300, temperature: 0.2, timeoutMs: 7000,
       });
-      appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'checkin_parse', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 }]);
+      events.push({ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'checkin_parse', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 });
       raw = parseJson(text);
       if (!raw || typeof raw !== 'object') throw new Error('bad checkin response');
     } catch (e) {
-      appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-checkin', message: e.message }]);
+      events.push({ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-checkin', message: e.message });
       raw = { ...keywordCheckin(transcript), note: transcript };
       fallback = true;
     }
@@ -360,7 +363,7 @@ module.exports = {
     if (!desire) missing.push('desire');
     if (durationMin === undefined) missing.push('durationMin');
     const confirmText = (!fallback && clip(raw.confirmText, 160).trim()) || confirmTextFor(lang, { durationMin, note });
-    appendEvents([{ type: 'checkin_parse', ts: now(), sessionId: s.sessionId, latencyMs: Date.now() - t0, fallback, missing }]);
+    await appendEvents([...events, { type: 'checkin_parse', ts: now(), sessionId: s.sessionId, latencyMs: Date.now() - t0, fallback, missing }]);
     return { state, desire, durationMin: durationMin === undefined ? null : durationMin, note, missing, confirmText, fallback };
   },
 
@@ -370,11 +373,12 @@ module.exports = {
     const b = await readBody(req, WALK_BODY_LIMIT);
     const lang = b.lang === 'en' ? 'en' : 'ja';
     const trigger = TRIGGERS.includes(b.trigger) ? b.trigger : 'arrive';
-    const spot = b.spotId && trigger !== 'between' ? readData('spots.json').spots.find((x) => x.id === b.spotId) || null : null;
+    const spot = b.spotId && trigger !== 'between' ? (await getSpots()).spots.find((x) => x.id === b.spotId) || null : null;
     const ctx = buildContext(b, { lang, trigger, spot });
 
     const calls = bump(narrateCounts, s.sessionId);
     const t0 = Date.now();
+    const events = []; // 最後に 1 回で書く
     let result;
     try {
       if (NARRATE_MAX_PER_SESSION && calls > NARRATE_MAX_PER_SESSION) throw new Error('narrate limit');
@@ -382,13 +386,13 @@ module.exports = {
         system: narrateSystemPrompt(lang), contents: [{ role: 'user', parts: [{ text: JSON.stringify(ctx) }] }],
         json: true, maxTokens: 600, temperature: 0.7, timeoutMs: 7000,
       });
-      appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'narrate', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 }]);
+      events.push({ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'narrate', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 });
       result = normalizeNarrate(parseJson(text), ctx, spot);
     } catch (e) {
-      appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-narrate', message: e.message }]);
+      events.push({ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-narrate', message: e.message });
       result = fallbackNarrate(ctx, spot);
     }
-    appendEvents([{ type: 'narrate', ts: now(), sessionId: s.sessionId, trigger, spotId: spot ? spot.id : null, latencyMs: Date.now() - t0, fallback: result.fallback }]);
+    await appendEvents([...events, { type: 'narrate', ts: now(), sessionId: s.sessionId, trigger, spotId: spot ? spot.id : null, latencyMs: Date.now() - t0, fallback: result.fallback }]);
     return result;
   },
 };

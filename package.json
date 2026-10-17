@@ -8,8 +8,10 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node server.js",
-    "start:lan": "node -e \"process.env.HOST='0.0.0.0';require('./server.js')\"",
+    "start": "node scripts/start-local.js",
+    "start:lan": "node scripts/start-local.js --lan",
+    "start:offline": "node server.js",
+    "migrate": "node scripts/migrate-to-firestore.js",
     "test": "node --test \"test/*.test.js\""
   }
 }

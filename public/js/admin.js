@@ -28,8 +28,15 @@ async function load() {
     return;
   }
   $('#login').hidden = true; $('#logout').hidden = false;
+  if (!res.ok) {
+    $('#meta').textContent = res.status === 503 ? '記録を読めませんでした。しばらくしてから開き直してください。' : `集計できませんでした（${res.status}）`;
+    $('#cards').replaceChildren();
+    return;
+  }
   const s = await res.json();
-  $('#meta').textContent = `集計時刻 ${new Date(s.generatedAt).toLocaleString()} ／ モデル ${s.model}`;
+  // 読む量の上限（STATS_MAX_DOCS）に届いたときは、新しい分だけを集計している
+  const range = s.fromDay ? ` ／ ${s.fromDay} 〜 ${s.toDay}（${s.days} 日）` : '';
+  $('#meta').textContent = `集計時刻 ${new Date(s.generatedAt).toLocaleString()} ／ モデル ${s.model}${range}${s.truncated ? ' ／ ⚠ 記録が多いため一部だけ集計' : ''}`;
   const f = s.funnel;
   const rate = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—');
   const reflections = s.reflections.map((r) => [`${new Date(r.ts).toLocaleString()} [${r.lang}]`, [r.noticed, r.changed, r.nextWish].map((x) => x || '—').join(' ／ ')]);

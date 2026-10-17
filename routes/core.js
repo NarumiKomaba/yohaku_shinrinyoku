@@ -2,15 +2,24 @@
 'use strict';
 
 const crypto = require('crypto');
-const { MODEL, API_KEY, DEMO_CODES, DEMO_PUBLIC, DEFAULT_DEMO_CODE, PURCHASE_ENABLED, SESSIONS_PER_CODE_DAILY, SESSIONS_PER_IP_DAILY, TRUSTED_PROXY_HOPS } = require('../lib/config');
+const { MODEL, API_KEY, DEMO_CODES, DEMO_PUBLIC, DEFAULT_DEMO_CODE, PURCHASE_ENABLED, SESSIONS_PER_CODE_DAILY, SESSIONS_PER_IP_DAILY, TRUSTED_PROXY_HOPS, STATS_MAX_DOCS, STATS_CACHE_SEC } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
-const { readData, readLog, writeLog, appendEvents, readEvents } = require('../lib/store');
+const { getSpots, appendEvents, listEvents, listPurchases, createPurchase, getPurchase, markPurchaseUsed } = require('../lib/store');
+const { PURCHASE_CODE_RE } = require('../lib/store/common');
+const { readStatic } = require('../lib/static-data');
+const { buildStats } = require('../lib/stats');
 const { createSession, requireSession, requireGuide, guideLogin } = require('../lib/auth');
-const { clientIp, ipBucket, capSize, createFailureLimiter, createDailyCounter } = require('../lib/limits');
+const { jstDay, clientIp, ipBucket, capSize, createFailureLimiter, createDailyCounter } = require('../lib/limits');
 
 const DATA_FILES = { spots: 'spots.json', scenario: 'scenario.json', knowledge: 'knowledge.json' };
 const now = () => new Date().toISOString();
 const SMALL_BODY_LIMIT = 16_000;
+// 購入で受け付けるプランと言語（それ以外は先頭のもの）
+const PLANS = ['ai40'];
+const LANGS = ['ja', 'en'];
+const pick = (allowed, v) => (allowed.includes(v) ? v : allowed[0]);
+const PURCHASE_TRIES = 3; // 購入コードが既存のものと重なったら作り直す回数
+const DAY_MS = 24 * 3600 * 1000;
 const EVENTS_BODY_LIMIT = 64_000;
 
 // コードと合言葉の総当たり対策（接続元ごとに 10 分で 10 回、全体で 200 回失敗したら 429）。入力された値はログに出さない
@@ -46,63 +55,77 @@ function cleanEvent(e) {
   return Object.fromEntries(entries);
 }
 
-function buildStats() {
-  const events = readEvents();
-  const purchases = Object.values(readLog('purchases.json', {}));
-  const by = (type) => events.filter((e) => e.type === type);
-  const uniq = (arr) => new Set(arr).size;
-  const countBy = (arr, keyFn) => arr.reduce((m, x) => { const k = keyFn(x); m[k] = (m[k] || 0) + 1; return m; }, {});
-  const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+// 集計する日数（?days=N。既定 7、1〜90）。範囲外は 400
+function statsDays(req) {
+  const raw = new URL(req.url, 'http://localhost').searchParams.get('days');
+  if (raw === null) return 7;
+  const days = Number(raw);
+  if (!/^\d+$/.test(raw) || days < 1 || days > 90) throw httpError(400, 'invalid days');
+  return days;
+}
 
-  const starts = by('session_start');
-  const completes = by('session_complete');
-  const llm = by('llm_usage');
-  const surveys = by('survey');
-  const totalCost = llm.reduce((a, e) => a + (e.costJpy || 0), 0);
-  const walkLlm = llm.filter((e) => e.sessionId);
-  const sessionsWithCost = uniq(walkLlm.map((e) => e.sessionId));
-  const walkCost = walkLlm.reduce((a, e) => a + (e.costJpy || 0), 0);
+async function computeStats(days) {
+  const toDay = jstDay();
+  const fromDay = jstDay(Date.now() - (days - 1) * DAY_MS);
+  const [ev, pu] = await Promise.all([listEvents({ fromDay, toDay, maxDocs: STATS_MAX_DOCS }), listPurchases()]);
+  return { ...buildStats(ev.events, pu.purchases, { model: MODEL, generatedAt: now() }), days, fromDay, toDay, truncated: ev.truncated || pu.truncated };
+}
 
-  return {
-    generatedAt: now(),
-    model: MODEL,
-    funnel: {
-      purchases: purchases.length + by('purchase').filter((e) => e.demoCode).length,
-      started: uniq(starts.map((e) => e.sessionId)),
-      completed: uniq(completes.map((e) => e.sessionId)),
-    },
-    avgDurationMin: avg(completes.map((e) => e.durationSec / 60).filter(Number.isFinite)),
-    language: countBy(starts, (e) => e.lang || '?'),
-    mode: countBy(starts, (e) => e.mode || '?'),
-    checkinState: countBy(by('checkin'), (e) => e.state || '?'),
-    checkinDesire: countBy(by('checkin'), (e) => e.desire || '?'),
-    checkinNotes: by('checkin').filter((e) => e.note).slice(-20).reverse().map((e) => ({ ts: e.ts, note: e.note })),
-    spotReach: countBy([...new Map(by('spot_reached').map((e) => [`${e.sessionId}:${e.spotId}`, e])).values()], (e) => e.spotId),
-    interactions: countBy(by('interaction'), (e) => e.kind || '?'),
-    silenceAvgSec: avg(by('silence_end').map((e) => e.actualSec).filter(Number.isFinite)),
-    questions: { total: by('question_asked').length, byInput: countBy(by('question_asked'), (e) => e.input || '?') },
-    guideAsks: { total: by('guide_ask').length, answered: countBy(by('guide_ask_reply'), (e) => e.via || '?') },
-    usage: {
-      llmCalls: llm.length,
-      byPurpose: countBy(llm, (e) => e.purpose || '?'),
-      inputTokens: llm.reduce((a, e) => a + (e.inputTokens || 0), 0),
-      outputTokens: llm.reduce((a, e) => a + (e.outputTokens || 0), 0),
-      sttCount: by('stt_used').length,
-      ttsChars: by('tts').reduce((a, e) => a + (e.chars || 0), 0),
-      totalCostJpy: totalCost,
-      costPerSessionJpy: sessionsWithCost ? walkCost / sessionsWithCost : 0,
-    },
-    errors: countBy(by('error'), (e) => `${e.where || '?'}: ${String(e.message || '?').slice(0, 70)}`),
-    survey: {
-      n: surveys.length,
-      satisfactionAvg: avg(surveys.map((e) => Number(e.satisfaction)).filter((n) => n > 0)),
-      recommendAvg: avg(surveys.map((e) => e.recommend).filter((n) => typeof n === 'number')),
-      price: countBy(surveys, (e) => e.price || '未回答'),
-      screen: countBy(surveys, (e) => e.screen || '未回答'),
-      next: countBy(surveys.flatMap((e) => e.next || []), (x) => x),
-    },
-    reflections: by('reflection').slice(-20).reverse().map((e) => ({ ts: e.ts, lang: e.lang, noticed: e.noticed, changed: e.changed, nextWish: e.nextWish })),
+// 集計は重いので STATS_CACHE_SEC のあいだ使い回す（日数ごと）。読んでいる途中に来たリクエストも同じ読み込みを待つ。失敗は残さない
+let statsCache = new Map(); // days -> { at, promise, settled }
+const setStatsEntry = (days, entry) => { statsCache = new Map(statsCache).set(days, entry); };
+function loadStats(days) {
+  const hit = statsCache.get(days);
+  if (hit && (!hit.settled || Date.now() - hit.at < STATS_CACHE_SEC * 1000)) return hit.promise;
+  const promise = computeStats(days);
+  setStatsEntry(days, { at: Date.now(), promise, settled: false });
+  const settle = (ok) => {
+    if (statsCache.get(days)?.promise !== promise) return;
+    if (ok) setStatsEntry(days, { at: Date.now(), promise, settled: true });
+    else statsCache = new Map([...statsCache].filter(([d]) => d !== days));
   };
+  promise.then(() => settle(true), () => settle(false));
+  return promise;
+}
+
+// 購入コードを作る。同じコードがあれば作り直す
+async function issuePurchase(body) {
+  for (let i = 0; i < PURCHASE_TRIES; i++) {
+    const p = { code: 'KG-' + crypto.randomBytes(3).toString('hex').toUpperCase(), plan: pick(PLANS, body.plan), lang: pick(LANGS, body.lang), priceJpy: 2000, createdAt: now(), usedAt: null };
+    try {
+      await createPurchase(p);
+      return p;
+    } catch (e) {
+      if (e.code !== 'exists') throw e;
+    }
+  }
+  throw httpError(503, 'purchase_code_busy');
+}
+
+function rejectCode(ip) {
+  sessionFails.fail(ip);
+  console.warn('[auth] invalid code from', ip);
+  throw httpError(403, 'invalid_code');
+}
+
+// 購入コードを調べる。await の前に失敗として数え（同時に送られても上限を超えない）、見つかったら取り消す
+async function findPurchase(ip, c) {
+  // 購入を止めているときは、過去に発行した購入コードも受け付けない。形の違うものは調べるまでもない
+  if (!PURCHASE_ENABLED || !PURCHASE_CODE_RE.test(c)) rejectCode(ip);
+  sessionFails.fail(ip);
+  let p;
+  try {
+    p = await getPurchase(c);
+  } catch (e) {
+    sessionFails.undo(ip); // 保存先の故障は本人の失敗ではない
+    throw e;
+  }
+  if (!p) {
+    console.warn('[auth] invalid code from', ip);
+    throw httpError(403, 'invalid_code');
+  }
+  sessionFails.undo(ip);
+  return p;
 }
 
 module.exports = {
@@ -111,19 +134,16 @@ module.exports = {
 
   'GET /api/data/:name': (req, params) => {
     if (!Object.hasOwn(DATA_FILES, params.name)) throw httpError(404, 'not found');
-    return readData(DATA_FILES[params.name]);
+    return params.name === 'spots' ? getSpots() : readStatic(DATA_FILES[params.name]);
   },
 
   // モック決済: 実運用では Stripe Checkout 等の Webhook でコードを発行する
   'POST /api/purchase': async (req) => {
     if (!PURCHASE_ENABLED) throw httpError(403, 'purchase_disabled');
     const body = await readBody(req, SMALL_BODY_LIMIT);
-    const code = 'KG-' + crypto.randomBytes(3).toString('hex').toUpperCase();
-    const p = readLog('purchases.json', {});
-    p[code] = { code, plan: body.plan || 'ai40', lang: body.lang || 'ja', priceJpy: 2000, createdAt: now(), usedAt: null };
-    writeLog('purchases.json', p);
-    appendEvents([{ type: 'purchase', ts: now(), plan: p[code].plan, lang: p[code].lang }]);
-    return { code };
+    const p = await issuePurchase(body);
+    await appendEvents([{ type: 'purchase', ts: now(), plan: p.plan, lang: p.lang }]);
+    return { code: p.code };
   },
 
   'POST /api/session': async (req) => {
@@ -132,22 +152,18 @@ module.exports = {
     // body を読み終えてから確かめる（check から fail まで await を挟まないので、同時に送られても上限を超えない）
     sessionFails.check(ip);
     const c = String(code || '').trim().toUpperCase();
-    // 購入を止めているときは、過去に発行した購入コードも受け付けない
-    const p = PURCHASE_ENABLED ? readLog('purchases.json', {}) : {};
+    // デモコードは保存先を読まずに進む（保存先が止まっていても体験できる）
     const isDemo = DEMO_CODES.includes(c);
-    if (!isDemo && !Object.hasOwn(p, c)) {
-      sessionFails.fail(ip);
-      console.warn('[auth] invalid code from', ip);
-      throw httpError(403, 'invalid_code');
-    }
+    const purchase = isDemo ? null : await findPurchase(ip, c);
     // 両方の上限を確かめてから数える（IP の上限で断ったときに、共通のデモコードの枠を減らさない）
     if (!sessionsPerIp.peek(ip)) throw httpError(429, 'ip_daily_limit');
     if (isDemo && !sessionsPerCode.peek(c)) throw httpError(429, 'code_daily_limit');
     sessionsPerIp.take(ip);
     if (isDemo) sessionsPerCode.take(c);
-    if (p[c] && !p[c].usedAt) { p[c].usedAt = now(); writeLog('purchases.json', p); }
+    // 使った印は最初の 1 回だけ。書けなくても体験は始められる（保存先のログは rest.js が出す）
+    if (purchase && !purchase.usedAt) await markPurchaseUsed(c, now(), { ifVersion: purchase.version }).catch(() => {});
     const { token, sessionId } = createSession(c);
-    if (isDemo) appendEvents([{ type: 'purchase', ts: now(), demoCode: true, sessionId }]);
+    if (isDemo) await appendEvents([{ type: 'purchase', ts: now(), demoCode: true, sessionId }]);
     return { token, sessionId };
   },
 
@@ -165,7 +181,7 @@ module.exports = {
     const accepted = [...counted, ...finals].map((e) => ({ ...e, sessionId: s.sessionId, ts }));
     if (!eventCounts.has(s.sessionId)) capSize(eventCounts);
     eventCounts.set(s.sessionId, used + counted.length);
-    return { ok: true, accepted: appendEvents(accepted) };
+    return { ok: true, accepted: await appendEvents(accepted) };
   },
 
   'POST /api/guide/login': async (req) => {
@@ -183,6 +199,6 @@ module.exports = {
 
   'GET /api/stats': (req) => {
     requireGuide(req);
-    return buildStats();
+    return loadStats(statsDays(req));
   },
 };

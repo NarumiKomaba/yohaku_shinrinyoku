@@ -2,100 +2,28 @@
 // 担当: implementer-guide
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
-const { MODEL, LOG_DIR } = require('../lib/config');
+const { MODEL, SPOTS_READ_ONLY } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
-const { readData, writeData, appendEvents } = require('../lib/store');
+const { getSpots, updateSpots, appendEvents, createRecording, getRecording, getRecordingMeta, putRecordingChunk, setRecordingStatus } = require('../lib/store');
+const { RECORDING_ID_RE, checkId, checkChunkIndex } = require('../lib/store/common');
 const { requireGuide } = require('../lib/auth');
+const { KINDS, TOPICS, str, clamp, cleanMaterial, cleanInteractions, normalizeSpot, normalizeSpotList, checkSpotId } = require('../lib/spot-validate');
 const { callGemini, parseJson, costJpy } = require('../lib/gemini');
 
 const AUDIO_LIMIT = 25_000_000;
-const REC_DIR = path.join(LOG_DIR, 'recordings');
-const KINDS = ['landmark', 'gate', 'bridge', 'trees', 'water', 'view', 'garden', 'rest', 'other'];
-const TYPES = ['fact', 'story', 'sense', 'notice', 'must'];
-const TOPICS = ['plant', 'history', 'culture', 'nature', 'birds', 'water', 'view', 'senses', 'safety'];
-const INTERACTIONS = ['LOOK', 'LISTEN', 'WALK', 'STOP', 'REST', 'SILENCE'];
 
 const now = () => new Date().toISOString();
-const str = (v, max = 2000) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
-const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+// お試し版と共有している Spot は、合言葉が弱い（既定か短い）あいだは読むだけ（lib/config.js の SPOTS_READ_ONLY）
+function requireSpotEditor(req) {
+  requireGuide(req);
+  if (SPOTS_READ_ONLY) throw httpError(403, 'shared_spots_read_only');
+}
 
 function logUsage(purpose, usage) {
-  appendEvents([{ type: 'llm_usage', ts: now(), purpose, model: MODEL, ...usage, costJpy: costJpy(usage) }]);
+  return appendEvents([{ type: 'llm_usage', ts: now(), purpose, model: MODEL, ...usage, costJpy: costJpy(usage) }]);
 }
-
-// ---------- 検証・整形 ----------
-function cleanMaterial(m, fallbackSource = 'guide') {
-  const text = str(m && m.text);
-  if (!text) return null;
-  return {
-    ...(str(m.id, 80) ? { id: str(m.id, 80) } : {}),
-    type: TYPES.includes(m.type) ? m.type : 'fact',
-    text,
-    lang: m.lang === 'en' ? 'en' : 'ja',
-    topics: (Array.isArray(m.topics) ? m.topics : []).filter((t) => TOPICS.includes(t)),
-    source: ['seed', 'osm', 'guide', 'recording'].includes(m.source) ? m.source : fallbackSource,
-    author: str(m.author, 60),
-    verified: m.verified === true,
-    createdAt: typeof m.createdAt === 'string' ? m.createdAt : now(),
-  };
-}
-
-function cleanInteractions(list) {
-  return (Array.isArray(list) ? list : [])
-    .filter((i) => i && INTERACTIONS.includes(i.type))
-    .map((i) => {
-      const o = { type: i.type };
-      if (i.type === 'SILENCE') o.seconds = clamp(Number(i.seconds) || 60, 10, 600);
-      if (i.text && (str(i.text.ja) || str(i.text.en))) o.text = { ja: str(i.text.ja, 300), en: str(i.text.en, 300) };
-      return o;
-    });
-}
-
-function normalizeSpot(sp, id) {
-  if (!sp || typeof sp !== 'object') throw httpError(400, 'invalid spot');
-  if (!Number.isFinite(sp.lat) || !Number.isFinite(sp.lng) || Math.abs(sp.lat) > 90 || Math.abs(sp.lng) > 180) throw httpError(400, 'invalid position');
-  const name = { ja: str(sp.name && sp.name.ja, 100), en: str(sp.name && sp.name.en, 100) };
-  if (!name.ja && !name.en) throw httpError(400, 'name required');
-  const used = new Set();
-  const materials = (Array.isArray(sp.materials) ? sp.materials : []).map((m) => cleanMaterial(m)).filter(Boolean);
-  for (const m of materials) {
-    if (m.id && !used.has(m.id)) { used.add(m.id); continue; }
-    let n = materials.length;
-    do { n++; m.id = `${id}-m${n}`; } while (used.has(m.id));
-    used.add(m.id);
-  }
-  const out = {
-    id,
-    ...(Number.isFinite(sp.order) ? { order: sp.order } : {}),
-    enabled: sp.enabled !== false,
-    name,
-    kind: KINDS.includes(sp.kind) ? sp.kind : 'other',
-    lat: +sp.lat.toFixed(6),
-    lng: +sp.lng.toFixed(6),
-    radius: clamp(Math.round(Number(sp.radius) || 40), 15, 100),
-    materials,
-    interactions: cleanInteractions(sp.interactions),
-    osm: sp.osm && typeof sp.osm === 'object' ? sp.osm : null,
-  };
-  return out;
-}
-
-function validateSpots(spots) {
-  if (!Array.isArray(spots)) throw httpError(400, 'spots must be an array');
-  const ids = new Set();
-  for (const sp of spots) {
-    if (!sp || typeof sp !== 'object' || Array.isArray(sp)) throw httpError(400, 'invalid spot');
-    if (!sp.id || !Number.isFinite(sp.lat) || !Number.isFinite(sp.lng) || !sp.name) throw httpError(400, 'invalid spot');
-    const id = String(sp.id);
-    if (ids.has(id)) throw httpError(400, 'duplicate id');
-    ids.add(id);
-  }
-}
-
-const checkSpotId = (id) => { if (!/^[a-z0-9-]{1,60}$/.test(id)) throw httpError(400, 'invalid id'); };
 
 // ---------- 音声 → 文字 ----------
 function audioPart(audioBase64, mimeType) {
@@ -110,7 +38,7 @@ const LANG_NAME = { ja: 'Japanese', en: 'English' };
 async function transcribeAudio({ audioBase64, mimeType, lang }) {
   const system = `You are a verbatim transcriber. Transcribe the speech in the audio exactly as spoken (expected language: ${LANG_NAME[lang] || 'Japanese'}, English words may be mixed in). Do not summarize, translate, correct facts, or add anything. Output the plain transcript only. If there is no speech, output an empty string.`;
   const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [audioPart(audioBase64, mimeType), { text: 'Transcribe.' }] }], maxTokens: 4000, temperature: 0, timeoutMs: 60000, metered: false });
-  logUsage('guide_transcribe', usage);
+  await logUsage('guide_transcribe', usage);
   return text.trim();
 }
 
@@ -118,7 +46,7 @@ async function transcribeAudio({ audioBase64, mimeType, lang }) {
 async function transcribeSegments({ audioBase64, mimeType, lang, durationSec }) {
   const system = `You are a verbatim transcriber for a guide's field recording (expected language: ${LANG_NAME[lang] || 'Japanese'}, English words may be mixed in). Split the speech into utterances and return JSON only: {"segments":[{"start":<seconds from the start of the audio>,"end":<seconds>,"text":"<exact words>"}]}. Do not summarize, translate, correct, or add anything. Ignore wind, footsteps and silence. If there is no speech, return {"segments":[]}.`;
   const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [audioPart(audioBase64, mimeType), { text: 'Transcribe.' }] }], maxTokens: 8000, temperature: 0, json: true, timeoutMs: 90000, metered: false });
-  logUsage('guide_record_transcribe', usage);
+  await logUsage('guide_record_transcribe', usage);
   const list = (parseJson(text).segments || []).filter((s) => s && str(s.text));
   const total = Number(durationSec) || 0;
   // 時刻が信頼できない（全部 0 や範囲外）場合は、文字数に比例して全体へ配分する
@@ -161,7 +89,7 @@ async function extractMaterials({ transcript, lang, spot }) {
   const user = `${spot ? `Existing spot: ${spot.name.ja || spot.name.en}\nExisting materials (do not duplicate):\n${spot.materials.map((m) => `- ${m.text}`).join('\n') || '(none)'}\n` : ''}Transcript:\n${transcript}`;
   try {
     const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [{ text: user }] }], maxTokens: 1500, temperature: 0.2, json: true, timeoutMs: 40000, metered: false });
-    logUsage('guide_extract', usage);
+    await logUsage('guide_extract', usage);
     const out = sanitizeExtract(parseJson(text));
     if (!out.materials.length) throw new Error('no materials');
     return { ...out, fallback: false };
@@ -274,14 +202,26 @@ function nearestSpot(spots, c, within = 30) {
 }
 
 // ---------- 録音ウォーク ----------
-const recPath = (rid) => {
-  if (!/^[0-9a-f-]{36}$/.test(rid)) throw httpError(400, 'invalid recording id');
-  return path.join(REC_DIR, `${rid}.json`);
-};
-function loadRec(rid) {
-  try { return JSON.parse(fs.readFileSync(recPath(rid), 'utf8')); } catch (e) { if (e.status) throw e; throw httpError(404, 'recording not found'); }
+const checkRid = (rid) => checkId(RECORDING_ID_RE, rid, 'recording id');
+// load は getRecording（chunk も読む）か getRecordingMeta（本体だけ）
+async function loadRec(rid, load = getRecording) {
+  const rec = await load(checkRid(rid));
+  if (!rec) throw httpError(404, 'recording not found');
+  return rec;
 }
-const saveRec = (rec) => fs.writeFileSync(recPath(rec.id), JSON.stringify(rec), 'utf8');
+
+// 音声がごく短い（終了直前の切れ端など）場合は文字起こしを省き、軌跡だけ受け取る。失敗しても軌跡は残す
+async function transcribeChunk(body, startedMs, durationSec) {
+  if (typeof body.audioBase64 !== 'string' || body.audioBase64.length < 100) return { segments: [] };
+  try {
+    const segs = await transcribeSegments({ audioBase64: body.audioBase64, mimeType: body.mimeType, lang: body.lang, durationSec });
+    return { segments: segs.map((s) => ({ t0: startedMs + s.s0 * 1000, t1: startedMs + s.s1 * 1000, text: s.text })) };
+  } catch (e) {
+    if (e.status && e.status < 500) throw e;
+    console.error('[guide/recordings/chunk]', e.message);
+    return { segments: [], error: 'transcribe_failed' };
+  }
+}
 
 function cleanTrack(track) {
   return (Array.isArray(track) ? track : []).slice(0, 5000)
@@ -289,9 +229,10 @@ function cleanTrack(track) {
     .map((p) => ({ t: p.t, lat: p.lat, lng: p.lng, acc: Number.isFinite(p.acc) ? p.acc : 30 }));
 }
 
-async function finishRecording(rec) {
+// 録音から候補を作る（保存は呼び出し側）
+async function buildCandidates(rec) {
   const segments = rec.chunks.flatMap((c) => c.segments);
-  const spots = readData('spots.json').spots;
+  const { spots } = await getSpots();
   const found = detectPlaces(rec.track, segments).slice(0, 15);
   let extracted = [];
   if (found.length) {
@@ -299,7 +240,7 @@ async function finishRecording(rec) {
     const user = found.map((c, i) => `[${i}]\n${c.transcript}`).join('\n\n');
     try {
       const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [{ text: user }] }], maxTokens: 4000, temperature: 0.2, json: true, timeoutMs: 60000, metered: false });
-      logUsage('guide_record_extract', usage);
+      await logUsage('guide_record_extract', usage);
       extracted = parseJson(text).places || [];
     } catch { /* フォールバックは下で */ }
   }
@@ -315,54 +256,102 @@ async function finishRecording(rec) {
       walking: c.walking, startedAt: new Date(c.t0).toISOString(), transcript: c.transcript,
     };
   });
-  rec.status = 'finished';
-  rec.finishedAt = now();
-  rec.candidates = candidates;
-  delete rec.track; // 軌跡の点列は残さず、候補だけ保存する
-  saveRec(rec);
   return candidates;
+}
+
+// 新しい Spot の一覧を作る（今の一覧は変えない）。order は指定がなければ、既存なら元の値、新規なら最後
+function upsertSpot(spots, sp) {
+  const prev = spots.find((s) => s.id === sp.id);
+  const order = sp.order !== undefined ? sp.order : prev ? prev.order : Math.max(0, ...spots.map((s) => s.order || 0)) + 1;
+  const saved = order === undefined ? sp : { ...sp, order };
+  return { saved, created: !prev, spots: prev ? spots.map((s) => (s.id === sp.id ? saved : s)) : [...spots, saved] };
+}
+
+// ---------- 録音ウォークの finish ----------
+// finish を始めたのが自分かを見分ける印（同じミリ秒に 2 回押されても区別できるよう乱数にする）
+const newFinishToken = () => crypto.randomBytes(8).toString('hex');
+
+/**
+ * 自分が finishing にした録音だけを recording に戻す（すぐ押し直せるように）。version があればそれを条件に書き、
+ * なければ読み直して自分の印（finishToken）か確かめる。戻せなくても 5 分たてばやり直せる
+ */
+async function revertFinishing(rid, { token, version }) {
+  try {
+    let ifVersion = version;
+    if (!ifVersion) {
+      const r = await getRecordingMeta(rid);
+      if (!r || r.status !== 'finishing' || r.finishToken !== token) return;
+      ifVersion = r.version;
+    }
+    await setRecordingStatus(rid, { status: 'recording' }, { ifStatus: 'finishing', ifVersion });
+  } catch { /* 戻せなくてもよい */ }
+}
+
+/**
+ * 読んだときの状態のままなら finishing にする（同時に押されても、候補を作るのは 1 回だけ）。version を渡すので保存先は読み直さない。
+ * 書けなかったら読み直す: 自分の書き込みが（再試行で）もう入っていればそのまま、読んだあとに chunk が届いていれば新しい内容でもう 1 回
+ */
+async function startFinishing(rec) {
+  const token = newFinishToken();
+  const patch = () => ({ status: 'finishing', finishingAt: now(), finishToken: token });
+  const version = await setRecordingStatus(rec.id, patch(), { ifStatus: rec.status, ifVersion: rec.version });
+  if (version) return { current: rec, version, token };
+  const again = await loadRec(rec.id);
+  if (again.status === 'finishing' && again.finishToken === token) return { current: again, version: again.version, token };
+  if (again.status === 'recording') {
+    const retried = await setRecordingStatus(rec.id, patch(), { ifStatus: 'recording', ifVersion: again.version });
+    if (retried) return { current: again, version: retried, token };
+  }
+  throw httpError(409, 'finishing');
+}
+
+// 候補を保存し、軌跡を消す（保存先が chunk を検索して全部消す）。書けなければ、自分の書き込みが入っていないか確かめてから戻す
+async function saveFinished(rid, { version, token }, candidates) {
+  const finishedAt = now();
+  let done;
+  try {
+    done = await setRecordingStatus(rid, { status: 'finished', finishedAt, candidates }, { ifStatus: 'finishing', ifVersion: version, dropTrack: true });
+  } catch (e) {
+    await revertFinishing(rid, { token });
+    throw e;
+  }
+  if (done) return;
+  const after = await getRecordingMeta(rid).catch(() => null);
+  if (after && after.status === 'finished' && after.finishedAt === finishedAt) return;
+  await revertFinishing(rid, { token });
+  throw httpError(409, 'finish_conflict');
 }
 
 module.exports = {
   'PUT /api/spots': async (req) => {
-    requireGuide(req);
+    requireSpotEditor(req);
     const body = await readBody(req);
-    validateSpots(body.spots);
-    // 1 件ずつ PUT /api/guide/spots/:id と同じ検査・整形を通す（体験者の画面や LLM のプロンプトに入るため）
-    const spots = body.spots.map((sp) => {
-      const id = String(sp.id);
-      checkSpotId(id);
-      return normalizeSpot({ ...sp, id }, id);
-    });
-    const current = readData('spots.json');
-    writeData('spots.json', { ...current, spots });
+    const spots = normalizeSpotList(body.spots);
+    await updateSpots((current) => ({ ...current, spots }));
     return { ok: true, count: spots.length };
   },
 
   'PUT /api/guide/spots/:id': async (req, params) => {
-    requireGuide(req);
+    requireSpotEditor(req);
     checkSpotId(params.id);
     const body = await readBody(req);
     const sp = normalizeSpot(body.spot || body, params.id);
-    const data = readData('spots.json');
-    const i = data.spots.findIndex((s) => s.id === sp.id);
-    if (i >= 0) {
-      if (sp.order === undefined && data.spots[i].order !== undefined) sp.order = data.spots[i].order;
-      data.spots[i] = sp;
-    } else {
-      if (sp.order === undefined) sp.order = Math.max(0, ...data.spots.map((s) => s.order || 0)) + 1;
-      data.spots.push(sp);
-    }
-    writeData('spots.json', data);
-    return { ok: true, spot: sp, created: i < 0 };
+    // 保存が重なると fn をやり直すことがあるので、返すのは最後に呼ばれたときの結果
+    let result;
+    await updateSpots((data) => {
+      result = upsertSpot(data.spots, sp);
+      return { ...data, spots: result.spots };
+    });
+    return { ok: true, spot: result.saved, created: result.created };
   },
 
-  'DELETE /api/guide/spots/:id': (req, params) => {
-    requireGuide(req);
+  'DELETE /api/guide/spots/:id': async (req, params) => {
+    requireSpotEditor(req);
     checkSpotId(params.id);
-    const data = readData('spots.json');
-    if (!data.spots.some((s) => s.id === params.id)) throw httpError(404, 'spot not found');
-    writeData('spots.json', { ...data, spots: data.spots.filter((s) => s.id !== params.id) });
+    await updateSpots((data) => {
+      if (!data.spots.some((s) => s.id === params.id)) throw httpError(404, 'spot not found');
+      return { ...data, spots: data.spots.filter((s) => s.id !== params.id) };
+    });
     return { ok: true };
   },
 
@@ -385,69 +374,56 @@ module.exports = {
     const t = str(transcript, 8000);
     if (!t) throw httpError(400, 'transcript required');
     let spot = null;
-    if (spotId) spot = readData('spots.json').spots.find((s) => s.id === spotId) || null;
+    if (spotId) spot = (await getSpots()).spots.find((s) => s.id === spotId) || null;
     return extractMaterials({ transcript: t, lang, spot });
   },
 
-  'POST /api/guide/recordings': (req) => {
+  'POST /api/guide/recordings': async (req) => {
     requireGuide(req);
-    fs.mkdirSync(REC_DIR, { recursive: true });
-    const rec = { id: crypto.randomUUID(), createdAt: now(), status: 'recording', chunks: [], track: [], candidates: [] };
-    saveRec(rec);
+    const rec = { id: crypto.randomUUID(), createdAt: now(), status: 'recording', candidates: [] };
+    await createRecording(rec);
     return { recordingId: rec.id };
   },
 
   'POST /api/guide/recordings/:rid/chunk': async (req, params) => {
     requireGuide(req);
+    const rid = checkRid(params.rid); // body を読む前に
     const body = await readBody(req, AUDIO_LIMIT);
-    if (loadRec(params.rid).status !== 'recording') throw httpError(409, 'recording already finished');
+    const rec = await getRecordingMeta(rid);
+    if (!rec) throw httpError(404, 'recording not found');
+    if (rec.status !== 'recording') throw httpError(409, 'recording already finished');
     const startedMs = Date.parse(body.startedAt);
     if (!Number.isFinite(startedMs)) throw httpError(400, 'startedAt required');
-    const index = Number(body.index);
-    if (!Number.isInteger(index) || index < 0) throw httpError(400, 'index required');
+    const index = checkChunkIndex(Number(body.index));
     const durationSec = Number(body.durationSec) || 0;
-    const chunk = { index, startedAt: body.startedAt, durationSec, segments: [] };
-    // 音声がごく短い（終了直前の切れ端など）場合は文字起こしを省き、軌跡だけ受け取る
-    if (typeof body.audioBase64 === 'string' && body.audioBase64.length >= 100) {
-      try {
-        const segs = await transcribeSegments({ audioBase64: body.audioBase64, mimeType: body.mimeType, lang: body.lang, durationSec });
-        chunk.segments = segs.map((s) => ({ t0: startedMs + s.s0 * 1000, t1: startedMs + s.s1 * 1000, text: s.text }));
-      } catch (e) {
-        if (e.status && e.status < 500) throw e;
-        console.error('[guide/recordings/chunk]', e.message);
-        chunk.error = 'transcribe_failed';
-      }
-    }
-    // 音声は保存しない。文字起こしの間に状態が変わりうるので再読込して追記する
-    const rec = loadRec(params.rid);
-    rec.chunks = rec.chunks.filter((c) => c.index !== index).concat(chunk).sort((a, b) => a.index - b.index);
-    const have = new Set(rec.track.map((p) => p.t));
-    rec.track = rec.track.concat(cleanTrack(body.track).filter((p) => !have.has(p.t)));
-    saveRec(rec);
+    const chunk = { index, startedAt: body.startedAt, durationSec, ...(await transcribeChunk(body, startedMs, durationSec)) };
+    // 音声は保存しない。軌跡は同じ時刻の点を除いて足す（保存先が受け持つ）。
+    // 読んだときの version を渡すので、文字起こしの間に finish されていれば 409 で、何も書かない
+    await putRecordingChunk(rid, chunk, cleanTrack(body.track), { ifVersion: rec.version });
     return { ok: !chunk.error, index, segments: chunk.segments.length, ...(chunk.error ? { error: chunk.error } : {}) };
   },
 
   'POST /api/guide/recordings/:rid/finish': async (req, params) => {
     requireGuide(req);
-    const rec = loadRec(params.rid);
+    const rec = await loadRec(params.rid);
     if (rec.status === 'finished') return { candidates: rec.candidates };
     // finishing のままプロセスが落ちた場合に備え、5 分以上前なら再実行を許可する
     if (rec.status === 'finishing' && Date.now() - Date.parse(rec.finishingAt || 0) < 5 * 60_000) throw httpError(409, 'finishing');
-    rec.status = 'finishing';
-    rec.finishingAt = now();
-    saveRec(rec);
+    const started = await startFinishing(rec);
+    let candidates;
     try {
-      return { candidates: await finishRecording(rec) };
+      candidates = await buildCandidates(started.current);
     } catch (e) {
-      rec.status = 'recording';
-      saveRec(rec);
+      await revertFinishing(rec.id, started);
       throw e;
     }
+    await saveFinished(rec.id, started, candidates);
+    return { candidates };
   },
 
-  'GET /api/guide/recordings/:rid': (req, params) => {
+  'GET /api/guide/recordings/:rid': async (req, params) => {
     requireGuide(req);
-    const rec = loadRec(params.rid);
+    const rec = await loadRec(params.rid);
     return {
       id: rec.id, status: rec.status, createdAt: rec.createdAt,
       chunks: rec.chunks.map((c) => ({ index: c.index, durationSec: c.durationSec, segments: c.segments.length, error: c.error || null })),
