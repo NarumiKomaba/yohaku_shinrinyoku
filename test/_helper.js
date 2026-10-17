@@ -23,6 +23,12 @@ const TEST_SPOTS = {
   }],
 };
 
+// 開発者のシェルに入っていても、テストでは使わない設定（production-config.test.js でも使う）
+const CLEARED_ENV = ['NODE_ENV', 'K_SERVICE', 'DEMO_CODES', 'PURCHASE_ENABLED', 'LLM_DAILY_MAX', 'SESSIONS_PER_CODE_DAILY', 'SESSIONS_PER_IP_DAILY', 'TRUSTED_PROXY_HOPS',
+  'NARRATE_MAX_PER_SESSION', 'ASK_MAX_PER_SESSION', 'WALK_CALLS_PER_MIN', 'WALK_CALLS_PER_DAY', 'EVENTS_DAILY_BYTES', 'EVENTS_DAILY_WRITES',
+  'FIRESTORE_PROJECT_ID', 'FIRESTORE_DATABASE', 'STORE_NAMESPACE', 'SPOTS_NAMESPACE', 'FIRESTORE_AUTH', 'GCLOUD_CONFIG',
+  'STATS_MAX_DOCS', 'STATS_CACHE_SEC', 'SPOTS_CACHE_SEC', 'SHINRINYOKU_PREVIEW_ENV'];
+
 function setupEnv({ key = '', extraEnv = {} } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-test-'));
   for (const f of ['scenario.json', 'knowledge.json']) fs.copyFileSync(path.join(ROOT, 'data', f), path.join(dir, f));
@@ -30,9 +36,11 @@ function setupEnv({ key = '', extraEnv = {} } = {}) {
   process.env.DATA_DIR = dir;
   process.env.GEMINI_API_KEY = key; // 空文字 = キー無し扱い（実 Gemini を呼ばない）
   process.env.GUIDE_PASSCODE = 'TEST-PASS';
+  // テストはファイル版で記録する（Firestore にはつながない）
+  process.env.STORE_BACKEND = 'file';
   // 開発者のシェルの設定（公開用の設定など）でテストの結果が変わらないよう、既定値に戻す
-  for (const k of ['NODE_ENV', 'K_SERVICE', 'DEMO_CODES', 'PURCHASE_ENABLED', 'LLM_DAILY_MAX', 'SESSIONS_PER_CODE_DAILY', 'SESSIONS_PER_IP_DAILY', 'TRUSTED_PROXY_HOPS',
-    'NARRATE_MAX_PER_SESSION', 'ASK_MAX_PER_SESSION', 'WALK_CALLS_PER_MIN', 'WALK_CALLS_PER_DAY', 'EVENTS_DAILY_BYTES', 'GEMINI_MODEL']) delete process.env[k];
+  for (const k of [...CLEARED_ENV, 'GEMINI_MODEL']) delete process.env[k];
+  process.env.STATS_CACHE_SEC = '0'; // 集計を使い回さない（テストは直前に書いたイベントを見る）
   Object.assign(process.env, extraEnv);
   return dir;
 }
@@ -100,4 +108,22 @@ function stubGemini(handler) {
   return state;
 }
 
-module.exports = { setupEnv, startServer, api, rawGet, newSession, readEvents, stubGemini, realFetch, TEST_SPOTS };
+// 保存先の関数を、指定したもの（true なら全部）だけ store_unavailable で失敗させる（createStore(backend) に渡して使う）
+function withFaults(backend) {
+  const { storeUnavailable } = require('../lib/store/common');
+  let fault = null;
+  const wrap = ([name, fn]) => [name, (...args) => (fault === true || fault === name ? Promise.reject(storeUnavailable(503, 'UNAVAILABLE')) : fn(...args))];
+  return { backend: Object.fromEntries(Object.entries(backend).map(wrap)), setFault: (name) => { fault = name; } };
+}
+
+// 本物の gcloud の代わりに、呼ばれた印（called.txt）を残して偽のトークンを返す gcloud だけがある PATH（起動したサーバーが先にトークンを取るため）
+function fakeGcloud() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-gcloud-'));
+  if (process.platform === 'win32') fs.writeFileSync(path.join(dir, 'gcloud.cmd'), ['@echo off', 'echo called> "%~dp0called.txt"', 'echo fake-token', ''].join('\r\n'));
+  else fs.writeFileSync(path.join(dir, 'gcloud'), ['#!/bin/sh', 'echo called > "${0%/*}/called.txt"', 'echo fake-token', ''].join('\n'), { mode: 0o755 });
+  // Windows では Path と PATH が別のキーになりうるので、どちらも消してから入れる
+  const envWith = (env) => ({ ...Object.fromEntries(Object.entries(env).filter(([k]) => k.toUpperCase() !== 'PATH')), PATH: dir });
+  return { envWith, calledFile: path.join(dir, 'called.txt') };
+}
+
+module.exports = { CLEARED_ENV, withFaults, fakeGcloud, setupEnv, startServer, api, rawGet, newSession, readEvents, stubGemini, realFetch, TEST_SPOTS };

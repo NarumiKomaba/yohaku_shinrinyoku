@@ -6,8 +6,8 @@ COPY package.json server.js ./
 COPY lib/ ./lib/
 COPY routes/ ./routes/
 COPY public/ ./public/
-# data/ はガイドさんページの編集やログで書き込むため、実行ユーザー（node）の持ち物にする（logs/ は起動時に作る）
-COPY --chown=node:node data/ ./data/
+# 記録と Spot は Firestore に置く（STORE_BACKEND=firestore）。イメージには書き換えない同梱データだけを読み取り専用で入れる
+COPY data/knowledge.json data/scenario.json ./data/
 USER node
 EXPOSE 8080
 CMD ["node", "server.js"]

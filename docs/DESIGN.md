@@ -138,7 +138,7 @@ LLM を使ったら `appendEvents([{type:'llm_usage', ts, sessionId?, purpose, m
 | POST | `/api/guide/recordings/:rid/finish` | 立ち止まって話した場所を検出 → Spot 候補 `{candidates:[{lat,lng,radius,name,materials,nearestSpotId}]}` |
 | GET | `/api/guide/recordings/:rid` | 状態と候補 |
 
-音声を受ける API は `readBody(req, 25_000_000)` で上限を上げる。録音データの保存先は `data/logs/recordings/`。
+音声を受ける API は `readBody(req, 25_000_000)` で上限を上げる。録音ウォークの記録（文字起こしと軌跡。音声は保存しない）は保存先（`lib/store`）の `createRecording` などで書く（Firestore 版は `envs/{ns}/recordings/{id}` と `chunks/{番号}`、ファイル版は `data/logs/recordings/`）。
 
 ## 5. 体験の流れ（クライアント, implementer-walk）
 
@@ -158,4 +158,4 @@ LLM を使ったら `appendEvents([{type:'llm_usage', ts, sessionId?, purpose, m
 追加: `narrate(trigger, spotId, latencyMs, fallback)`, `guide_ask(spotId)`, `guide_ask_reply(via: button|voice|timeout, optionId)`
 
 ## 7. デモデータ（implementer-guide）
-`scripts/seed-demo.js`: OpenStreetMap（Overpass API, 読み取りのみ）から皇居外苑周辺の名前付き地物・樹木を取得し、**タグに書かれている事実だけ**から素材（`source:"osm", verified:false`）を作る。knowledge.json の該当チャンクも素材化してよい。既存の 6 Spot は残してマージ。`--dry-run` で差分表示、既定は `data/spots.json` を更新（バックアップは `writeData` が自動作成）。
+`scripts/seed-demo.js`: OpenStreetMap（Overpass API, 読み取りのみ）から皇居外苑周辺の名前付き地物・樹木を取得し、**タグに書かれている事実だけ**から素材（`source:"osm", verified:false`）を作る。knowledge.json の該当チャンクも素材化してよい。既存の 6 Spot は残してマージ。`--dry-run` で差分表示、既定は保存先の Spot を更新（`updateSpots` が古い版を自動で残す。Firestore 版は `envs/{SPOTS_NAMESPACE}/data/spots`）。

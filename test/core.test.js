@@ -160,3 +160,13 @@ test('unknownApi_returns404Json', async () => {
   const r = await h.api(srv.base, 'GET', '/api/nothing');
   assert.equal(r.status, 404);
 });
+
+test('purchase_keepsOnlyKnownPlanAndLang', async () => {
+  const p = await h.api(srv.base, 'POST', '/api/purchase', { body: { plan: '<script>', lang: { x: 1 } } });
+  assert.equal(p.status, 200);
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, 'logs', 'purchases.json'), 'utf8'))[p.json.code];
+  assert.equal(saved.plan, 'ai40');
+  assert.equal(saved.lang, 'ja');
+  const en = await h.api(srv.base, 'POST', '/api/purchase', { body: { plan: 'ai40', lang: 'en' } });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'logs', 'purchases.json'), 'utf8'))[en.json.code].lang, 'en');
+});

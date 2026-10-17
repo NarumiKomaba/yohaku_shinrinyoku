@@ -17,10 +17,24 @@
 ### インストールと起動
 
 ```bash
-npm install     # 依存なし。念のため実行
-npm start       # http://localhost:3000
-npm test        # ユニットテスト実行
+npm install          # 依存なし。念のため実行
+npm start            # http://localhost:3000（記録は Firestore。下の「ローカルの Firestore 認証」）
+npm run start:offline  # Firestore を使わずに動かす（記録は data/ のファイル）
+npm test             # ユニットテスト実行（ファイル版で動き、Firestore にはつながない）
 ```
+
+#### ローカルの Firestore 認証
+`npm start` は GCP プロジェクト `yohaku-shinrinyoku` の Firestore に記録します（イベント・購入・録音は `envs/local`、Spot はお試し版と同じ `envs/preview`）。
+共有の Spot を保存できるのは、合言葉がお試し版と同じ（16 文字以上）ときだけです。`GUIDE_PASSCODE` がなければ `~/.secrets/shinrinyoku/preview.env` から読みます（なければ既定の合言葉で、Spot は読むだけ。`start:lan` は起動しません）。
+トークンは `gcloud auth print-access-token` を gcloud の設定 `shinrinyoku` で実行して取ります（既定の設定は変えません。ADC は使いません）。
+
+```bash
+gcloud config configurations create shinrinyoku   # 初回だけ
+CLOUDSDK_ACTIVE_CONFIG_NAME=shinrinyoku gcloud auth login
+CLOUDSDK_ACTIVE_CONFIG_NAME=shinrinyoku gcloud config set project yohaku-shinrinyoku
+```
+
+つながらないときは、イベントは捨てずにメモリに残して次に書けたときに書き直し、Spot は最後に読めた内容を最大 1 時間使います。購入・ガイドさんの保存・集計は 503 になります。
 
 #### LAN 接続（スマホ実機テスト）
 ```bash
@@ -52,7 +66,19 @@ Gemini API キーは Windows のユーザー環境変数から自動的に読み
 | `SESSIONS_PER_CODE_DAILY` | `0`（無制限） | 1 つのデモコードで 1 日（日本時間）に始められる体験の数。公開では必須 |
 | `SESSIONS_PER_IP_DAILY` | ローカル `0`／公開 `20` | 1 つの接続元（IPv4 はアドレス、IPv6 は /64）で 1 日に始められる体験の数 |
 | `WALK_CALLS_PER_MIN` / `WALK_CALLS_PER_DAY` | ローカル `0`／公開 `30`・`300` | 1 回の体験で、体験中の API（質問・案内・チェックイン）を呼べる回数。超えたら 429 |
-| `EVENTS_DAILY_BYTES` | ローカル `0`／公開 `20000000` | 利用ログ（events.jsonl）に 1 日に書き込む量の上限（バイト）。超えた分は捨てる |
+| `EVENTS_DAILY_BYTES` | ローカル `0`／公開 `20000000` | 利用ログに 1 日に書き込む量の上限（バイト。JSON 1 行ずつで数える）。超えた分は捨てる。Firestore の無料保存（1 GiB）を考えると、お試し版では `5000000` に下げるのがおすすめ（docs/OPERATIONS.md） |
+| `EVENTS_DAILY_WRITES` | ローカル `0`／公開 `15000` | 利用ログを 1 日に書く回数（Firestore のドキュメント数）の上限。無料枠は 1 日 2 万回の書き込み |
+| `STORE_BACKEND` | `file` | 記録の保存先。`file`（data/ のファイル。テストと `start:offline`）・`firestore`（`npm start` とお試し版）・`memory`（テスト用）。公開では `firestore` が必須 |
+| `FIRESTORE_PROJECT_ID` | — | Firestore の GCP プロジェクト。`firestore` で必須（`npm start` は `yohaku-shinrinyoku`） |
+| `FIRESTORE_DATABASE` | `(default)` | Firestore のデータベース |
+| `STORE_NAMESPACE` | `local` | イベント・購入・録音を置く名前（`envs/<名前>/...`）。お試し版は `preview`。公開では必須で `local` は使えない |
+| `SPOTS_NAMESPACE` | `STORE_NAMESPACE` と同じ | Spot を置く名前。`npm start` はお試し版と同じ `preview` を読み書きする |
+| `FIRESTORE_AUTH` | 公開は `metadata`、それ以外は `gcloud` | トークンの取り方。`metadata` は実行アカウント、`gcloud` は `gcloud auth print-access-token`。公開では `metadata` だけ |
+| `GCLOUD_CONFIG` | — | `gcloud` で使う gcloud の設定名。`FIRESTORE_AUTH=gcloud` では必須（`npm start` は `shinrinyoku`。既定の設定は使わない） |
+| `SHINRINYOKU_PREVIEW_ENV` | `~/.secrets/shinrinyoku/preview.env` | `npm start` で `GUIDE_PASSCODE` がないときに、合言葉を読むファイル（`GUIDE_PASSCODE=...` の行。表示しない） |
+| `STATS_MAX_DOCS` | `1000` | 集計で読む利用ログのドキュメント数の上限。超えたら新しい分だけを集計し、集計ページに「一部だけ集計」と出す |
+| `STATS_CACHE_SEC` | `300` | 集計の結果を使い回す秒数（`0` で使い回さない。テストは `0`） |
+| `SPOTS_CACHE_SEC` | `30` | Firestore 版で Spot を使い回す秒数（自分の保存はすぐ反映。ほかのインスタンスの保存は最大この秒数遅れる） |
 | `TRUSTED_PROXY_HOPS` | `0` | `X-Forwarded-For` を足す信頼できるプロキシの段数（Cloud Run 直結は `1`、前にロードバランサーを置くなら `2`）。総当たり対策で接続元 IP を見分けるのに使う。公開では必須 |
 | `NARRATE_MAX_PER_SESSION` | `0`（無制限） | 1 回の体験での案内（narrate）の Gemini 呼び出し上限。超えたら素材だけの案内。公開では必須 |
 | `ASK_MAX_PER_SESSION` | `0`（無制限） | 1 回の体験での自由質問（ask）の Gemini 呼び出し上限。超えたら素材と Knowledge だけで答える。公開では必須 |
@@ -63,7 +89,7 @@ Gemini API キーは Windows のユーザー環境変数から自動的に読み
 | `GEMINI_PRICE_OUT_PER_M` | `2.5` | 出力トークン 1M あたりの USD。`gemini-3.8-flash` なら入力 `0.75`・出力 `3.75` を設定する |
 | `USD_JPY` | `150` | USD から JPY への換算レート |
 | `LOG_QUESTION_TEXT` | `0` | `1` に設定するとログに質問テキストを記録（デフォルト非記録） |
-| `DATA_DIR` | `./data` | データ保存ディレクトリ |
+| `DATA_DIR` | `./data` | 同梱データ（knowledge.json・scenario.json）と、ファイル版の記録の置き場所 |
 
 ## ページと用途
 
@@ -178,13 +204,22 @@ cloudflared tunnel --url http://localhost:3000
 - **セッション管理**: セッショントークン・ガイドトークンはメモリ内に保持（サーバー再起動で消失）
 - **位置情報**: 体験者の軌跡サーバーに保存しない（プライバシー保護）
 - **音声ファイル**: 文字起こし後すぐに破棄（ストレージ節約、プライバシー保護）
-- **ログ**: イベントベース（events.jsonl）で保存。個人軌跡ではなく、Spot 到達、質問の有無などを記録
+- **ログ**: イベントベースで保存。個人軌跡ではなく、Spot 到達、質問の有無などを記録
 - **決済**: モック実装（デモ用）。実際の課金は別途実装が必要
 
 ### データ保存
-- **Spot と素材**: `data/spots.json` に保存（バージョン 2）
-- **ログ**: `data/logs/events.jsonl` に追記（1 イベント = 1 行）
-- **バックアップ**: データ更新時に `data/logs/*.backup-{timestamp}.json` が自動作成
+保存先は `STORE_BACKEND` で選びます。`npm start` とお試し版は Firestore、テストと `npm run start:offline` はファイルです。
+
+| 記録 | Firestore | ファイル版 |
+|---|---|---|
+| Spot と素材 | `envs/{SPOTS_NAMESPACE}/data/spots`（1 ドキュメント、900KB まで） | `data/spots.json` |
+| Spot の古い版（新しい 20 個） | `envs/{SPOTS_NAMESPACE}/spotsHistory/{保存時刻}` | `data/logs/spots.backup-{時刻}.json` |
+| 利用ログ | `envs/{STORE_NAMESPACE}/eventBatches/{時刻}-{乱数}`（1 回の書き込み = 1 ドキュメント） | `data/logs/events.jsonl`（1 イベント = 1 行） |
+| 購入（モック） | `envs/{STORE_NAMESPACE}/purchases/{コード}` | `data/logs/purchases.json` |
+| 録音ウォーク | `envs/{STORE_NAMESPACE}/recordings/{id}` と `chunks/{番号}` | `data/logs/recordings/{id}.json` |
+
+- knowledge.json・scenario.json は書き換えないので、どちらでもファイルのまま読みます
+- ファイル版の記録や Spot を Firestore に移すときは `npm run migrate -- --namespace <名前> --spots-from <ファイルか URL> --logs`（`--dry-run` で確認だけ、Spot がすでにあれば `--force` なしでは上書きしない。何度流しても 2 重にならない）
 - **再起動で失うもの**: セッショントークン、進行中のウォーク、未コミットの素材変更（ガイドさんページで保存ボタンを押す必要あり）
 
 ## ディレクトリ構成
@@ -198,7 +233,18 @@ cloudflared tunnel --url http://localhost:3000
 ├── server.js                        # メインサーバー（ルーティング）
 ├── lib/
 │   ├── config.js                    # 環境変数・設定値読み込み
-│   ├── store.js                     # ファイル I/O・ログ記録
+│   ├── store/                       # 記録の保存先（STORE_BACKEND で選ぶ）
+│   │   ├── index.js                     # 選択・1 日の書き込み上限・書けなかったイベントの持ち越し
+│   │   ├── common.js                    # エラーの形・ID の形
+│   │   ├── file.js                      # ファイル版（テスト・start:offline）
+│   │   ├── memory.js                    # メモリ版（テスト用）
+│   │   └── firestore/                   # Firestore 版（events・spots・purchases・recordings）
+│   ├── firestore/                       # Firestore REST（rest.js・encode.js・token.js・writes.js）
+│   ├── static-data.js                   # knowledge.json・scenario.json の読み込み（1 回だけ読んで使い回す）
+│   ├── freeze.js                        # 使い回すデータを変えられないようにする
+│   ├── spot-validate.js                 # Spot と素材の検査・整形（ガイドさんページと移行で共通）
+│   ├── stats.js                         # 集計（/api/stats）
+│   ├── limits.js                        # 回数の上限・接続元 IP
 │   ├── auth.js                      # セッション・ガイド認証
 │   ├── http.js                      # HTTP レスポンス
 │   ├── knowledge.js                 # 一般知識ベース・検索
@@ -227,16 +273,18 @@ cloudflared tunnel --url http://localhost:3000
 │       ├── i18n.js                  # 多言語対応
 │       └── motion.js                # 動作ユーティリティ
 ├── data/
-│   ├── spots.json                   # Spot データ（位置 + 素材）
+│   ├── spots.json                   # Spot データ（ファイル版の初期値。Firestore 版は envs/{ns}/data/spots）
 │   ├── scenario.json                # ウォーク全体の流れ（プロトコル）
 │   ├── knowledge.json               # 一般知識ベース（補足情報）
-│   └── logs/
+│   └── logs/                        # ファイル版の記録（git には入れない）
 │       ├── events.jsonl             # イベントログ（1 行 = 1 イベント）
 │       ├── purchases.json           # 購入・チェックイン実績
-│       ├── recordings/              # 音声録音ファイル（処理後削除）
-│       └── *.backup-*.json          # 自動バックアップ
+│       ├── recordings/              # 録音ウォークの文字起こしと軌跡（音声は保存しない）
+│       └── spots.backup-*.json      # Spot の古い版
 ├── scripts/
-│   └── seed-demo.js                 # OSM からデモデータ自動生成
+│   ├── seed-demo.js                 # OSM からデモデータ自動生成
+│   ├── start-local.js               # npm start（Firestore の既定値を入れて起動）
+│   └── migrate-to-firestore.js      # ファイル版の記録・Spot を Firestore へ移す
 └── test/
     └── *.test.js                    # ユニットテスト
 ```
@@ -249,7 +297,8 @@ cloudflared tunnel --url http://localhost:3000
 
 ```bash
 npm test                   # 全テスト実行
-node server.js             # サーバー起動（http://localhost:3000）
+npm start                  # サーバー起動（http://localhost:3000、記録は Firestore）
+npm run start:offline      # Firestore を使わずに起動（node server.js と同じ）
 npm run start:lan          # LAN 公開（http://0.0.0.0:3000）
 ```
 

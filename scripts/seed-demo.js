@@ -3,14 +3,15 @@
 //   node scripts/seed-demo.js [--dry-run] [--bbox south,west,north,east] [--out <file>] [--cache <file>] [--max 15]
 // 既定（皇居外苑）は既存の Spot を残してマージする。素材 id は決定的なので何度実行しても重複しない。
 // 他の場所（--bbox 指定）は既存 Spot を使わず、OSM タグ由来の素材だけで新規に作る。
-// 出力先は --out（既定 data/spots.json。他の場所で data/spots.json を上書きするには --force が必要）。
+// 出力先は --out（既定は保存先の Spot: ファイル版は data/spots.json、STORE_BACKEND=firestore なら envs/{SPOTS_NAMESPACE}/data/spots。
+// 他の場所で既定の出力先を上書きするには --force が必要）。
 // 担当: implementer-guide
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { DATA_DIR } = require('../lib/config');
-const { readData, writeData } = require('../lib/store');
+const { DATA_DIR, STORE_BACKEND, SPOTS_NAMESPACE } = require('../lib/config');
+const { getSpots, updateSpots } = require('../lib/store');
 
 // 皇居外苑（皇居前広場・和田倉噴水公園・馬場先濠・桜田門・二重橋・楠公像周辺）。丸の内・東御苑・日比谷側は含めない
 const DEFAULT_BBOX = '35.6765,139.752,35.685,139.762';
@@ -25,7 +26,9 @@ if (!/^-?\d+(\.\d+)?(,-?\d+(\.\d+)?){3}$/.test(BBOX)) { console.error('--bbox �
 const IS_DEFAULT = BBOX === DEFAULT_BBOX;
 const DEFAULT_OUT = path.join(DATA_DIR, 'spots.json');
 const OUT = path.resolve(argVal('--out') || DEFAULT_OUT);
-if (!IS_DEFAULT && OUT === DEFAULT_OUT && !DRY && !args.includes('--force')) { console.error('皇居外苑以外の場所で data/spots.json を上書きするには --out <file> か --force を指定してください'); process.exit(1); }
+// 既定の出力先（保存先の Spot）の名前（表示用）
+const STORE_LABEL = STORE_BACKEND === 'firestore' ? `Firestore の Spot（envs/${SPOTS_NAMESPACE}）` : DEFAULT_OUT;
+if (!IS_DEFAULT && OUT === DEFAULT_OUT && !DRY && !args.includes('--force')) { console.error(`皇居外苑以外の場所で ${STORE_LABEL} を上書きするには --out <file> か --force を指定してください`); process.exit(1); }
 const CACHE = argVal('--cache');
 const MAX_TOTAL = Number(argVal('--max')) || 15;
 const ROUTE_M = Number(argVal('--route-m')) || 500; // （皇居外苑のみ）既存 Spot からこれ以内の候補だけ（歩ける範囲）
@@ -141,7 +144,8 @@ async function main() {
   const { elements: all } = await fetchOsm();
   const elements = all.filter((e) => { const p = pos(e); return p.lat != null && inBox(p); }); // キャッシュが広い範囲でも bbox 内だけ使う
   // 皇居外苑は既存 Spot とマージ。他の場所は空から作る
-  const data = IS_DEFAULT ? readData('spots.json') : { version: 2, spots: [] };
+  // 読んだ Spot はこのあと書き換えるので、自分用に複製する（保存先が使い回す内容は変えられない）
+  const data = IS_DEFAULT ? structuredClone(await getSpots()) : { version: 2, spots: [] };
   const spots = data.spots;
   const taken = new Set(spots.map((s) => s.id));
   const report = { moved: [], merged: [], added: [], skipped: [] };
@@ -258,9 +262,9 @@ async function main() {
     [...on, ...off].forEach((s, i) => { s.order = i + 1; });
   }
   spots.sort((a, b) => a.order - b.order);
-  if (OUT === DEFAULT_OUT) writeData('spots.json', { ...data, spots }); // バックアップ自動
+  if (OUT === DEFAULT_OUT) await updateSpots(() => ({ ...data, spots })); // 古い版は保存先が残す
   else { fs.mkdirSync(path.dirname(OUT), { recursive: true }); fs.writeFileSync(OUT, JSON.stringify({ ...data, spots }, null, 2), 'utf8'); }
-  console.log(`\n${OUT} を更新しました（計 ${spots.length} 件）`);
+  console.log(`\n${OUT === DEFAULT_OUT ? STORE_LABEL : OUT} を更新しました（計 ${spots.length} 件）`);
 }
 
 main().catch((e) => { console.error(e.message); process.exit(1); });

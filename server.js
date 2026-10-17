@@ -8,6 +8,17 @@ const path = require('path');
 const cfg = require('./lib/config');
 const { send, SECURITY_HEADERS } = require('./lib/http');
 
+// 公開（NODE_ENV=production か Cloud Run）で設定が足りなければ起動しない。
+// node server.js では routes（が読み込む保存先）を作る前に確かめ、start() でももう一度確かめる（scripts/start-local.js は公開では使わない）
+function refuseIfMisconfigured() {
+  if (!cfg.IS_PRODUCTION) return;
+  const problems = cfg.productionProblems();
+  if (!problems.length) return;
+  console.error(['公開用の設定が足りないため起動しません（NODE_ENV=production）:', ...problems.map((p) => `  - ${p}`)].join('\n'));
+  process.exit(1);
+}
+if (require.main === module) refuseIfMisconfigured();
+
 // "METHOD /path/:param" 形式のキーを正規表現に変換して登録
 const routes = [];
 for (const mod of ['core', 'walk', 'guide']) {
@@ -34,7 +45,15 @@ function serveStatic(res, pathname) {
   });
 }
 
+const isLocalHost = (host) => ['127.0.0.1', 'localhost', '::1'].includes(host);
+// Host ヘッダーのホスト名（ポートを除く。IPv6 は [::1] の形のまま）
+const hostName = (host) => String(host || '').trim().toLowerCase().replace(/:\d+$/, '');
+const LOOPBACK_NAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
 async function handle(req, res) {
+  // ループバックで待ち受けているときは、Host がループバックの名前でなければ断る
+  // （DNS リバインディングで、ほかのサイトからこのパソコンのサーバーを操作させない）
+  if (isLocalHost(cfg.HOST) && !LOOPBACK_NAMES.has(hostName(req.headers.host))) return send(res, 421, { error: 'misdirected' });
   const { pathname } = new URL(req.url, 'http://localhost');
   try {
     for (const r of routes) {
@@ -54,25 +73,42 @@ async function handle(req, res) {
   }
 }
 
+const store = require('./lib/store');
 const server = http.createServer(handle);
 // 遅いクライアントに接続を握られ続けないようにする（録音のアップロードも 2 分あれば足りる）
 server.requestTimeout = 120_000;
 server.headersTimeout = 20_000;
 
-const isLocalHost = (host) => ['127.0.0.1', 'localhost', '::1'].includes(host);
 
-if (require.main === module) {
-  if (cfg.IS_PRODUCTION) {
-    const problems = cfg.productionProblems();
-    if (problems.length) {
-      console.error(['公開用の設定が足りないため起動しません（NODE_ENV=production）:', ...problems.map((p) => `  - ${p}`)].join('\n'));
-      process.exit(1);
-    }
-  }
+// 止めるとき（Cloud Run は SIGTERM）: 受け付けをやめ、書きかけのログと持ち越したイベントを最大 5 秒待って書く
+const FLUSH_WAIT_MS = 5000;
+async function shutdown({ exit = process.exit } = {}) {
+  server.close();
+  await Promise.race([store.flush(), new Promise((r) => setTimeout(r, FLUSH_WAIT_MS).unref())]);
+  exit(0);
+}
+
+// npm start（scripts/start-local.js）からも呼べるように関数にする（node -e や require では require.main が server.js にならない）
+// 読むだけの Spot（お試し版と同じものなど）を、弱い合言葉のまま LAN に出さない
+function refuseSharedSpotsOnLan() {
+  if (isLocalHost(cfg.HOST) || !cfg.SPOTS_READ_ONLY) return;
+  console.error(`Spot（envs/${cfg.SPOTS_NAMESPACE}）を、既定または短い合言葉のまま LAN に出せません。GUIDE_PASSCODE（16 文字以上）を環境変数で設定するか、SPOTS_NAMESPACE・STORE_NAMESPACE を local にしてください`);
+  process.exit(1);
+}
+
+function start() {
+  refuseIfMisconfigured();
+  refuseSharedSpotsOnLan();
+  process.once('SIGTERM', () => { shutdown(); });
+  process.once('SIGINT', () => { shutdown(); });
+  // 最初の体験者が gcloud やメタデータサーバーを待たないよう、先にトークンを取る（失敗しても起動は続ける）
+  store.warmUp();
   server.listen(cfg.PORT, cfg.HOST, () => {
     console.log(`Digital Nature & Wellness Instructor — http://${cfg.HOST === '0.0.0.0' ? 'localhost' : cfg.HOST}:${cfg.PORT}`);
     console.log('  体験アプリ: /   ガイドさんページ: /guide.html   集計: /admin.html');
     console.log(`  Gemini: ${cfg.API_KEY ? `key found (${cfg.KEY_SOURCE}), model=${cfg.MODEL}` : 'key NOT found → 素材・Knowledge のみで動作（フォールバック）'}`);
+    console.log(`  記録: ${cfg.STORE_BACKEND === 'firestore' ? `Firestore ${cfg.FIRESTORE_PROJECT_ID}（envs/${cfg.STORE_NAMESPACE}、Spot は envs/${cfg.SPOTS_NAMESPACE}、認証 ${cfg.FIRESTORE_AUTH}）` : cfg.STORE_BACKEND}`);
+    if (cfg.SPOTS_READ_ONLY) console.log(`  Spot（envs/${cfg.SPOTS_NAMESPACE}）: 合言葉が既定か短いので読むだけ（GUIDE_PASSCODE を 16 文字以上にすると保存できる）`);
     // 合言葉と非公開のデモコードは、ログ（Cloud Run ではクラウドに残る）に出さない
     console.log(`  デモ用購入コード: ${cfg.DEMO_PUBLIC ? cfg.DEMO_CODES.join(', ') : '(設定済み)'}${cfg.PURCHASE_ENABLED ? '' : '   購入: 停止中'}${cfg.LLM_DAILY_MAX ? `   LLM 上限: ${cfg.LLM_DAILY_MAX} 回/日` : ''}   ガイドさん合言葉: ${cfg.GUIDE_PASSCODE_IS_DEFAULT ? `${cfg.GUIDE_PASSCODE}（既定）` : '(設定済み)'}`);
     if (!isLocalHost(cfg.HOST)) {
@@ -83,4 +119,6 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, handle };
+if (require.main === module) start();
+
+module.exports = { server, handle, start, shutdown };

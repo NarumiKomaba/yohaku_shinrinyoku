@@ -171,7 +171,7 @@ test('putSpots_all_storesNumericIdAsString', async () => {
 });
 
 test('writeData_keepsOnlyRecentBackups', async () => {
-  const { MAX_BACKUPS } = require('../lib/store');
+  const { MAX_BACKUPS } = require('../lib/store/common');
   const before = JSON.parse(fs.readFileSync(path.join(dir, 'spots.json'), 'utf8'));
   try {
     for (let i = 0; i < MAX_BACKUPS + 5; i++) {
@@ -555,4 +555,18 @@ test('finish_withNoSpeech_returnsNoCandidates', async () => {
   const fin = await call('POST', `/api/guide/recordings/${rid}/finish`, {});
   assert.deepEqual(fin.json.candidates, []);
   assert.equal(stub.calls, calls, '候補が無ければ抽出 LLM は呼ばない');
+});
+
+test('finish_pressedTwiceAtOnce_buildsCandidatesOnlyOnce', async () => {
+  const stub = h.stubGemini((n, body) => (/verbatim transcriber/.test(body.systemInstruction.parts[0].text)
+    ? j({ segments: [{ start: 10, end: 20, text: LONG }] }) : j({ places: [] })));
+  const { json: { recordingId: rid } } = await call('POST', '/api/guide/recordings', {});
+  await call('POST', `/api/guide/recordings/${rid}/chunk`, { startedAt: isoAt(T0), index: 0, durationSec: 60, audioBase64: AUDIO, mimeType: 'audio/webm', track: stayTrack(0, 40) });
+  const calls = stub.calls;
+  const results = await Promise.all([call('POST', `/api/guide/recordings/${rid}/finish`, {}), call('POST', `/api/guide/recordings/${rid}/finish`, {})]);
+  // あとのほうは 409（作っている途中）か、作り終えた候補をそのまま返す 200
+  assert.ok(results.every((r) => r.status === 200 || r.status === 409), results.map((r) => r.status).join());
+  assert.ok(results.some((r) => r.status === 200));
+  assert.equal(stub.calls - calls, 1, '候補を作る LLM は 1 回だけ');
+  assert.equal((await call('GET', `/api/guide/recordings/${rid}`)).json.status, 'finished');
 });

@@ -6,6 +6,8 @@ const NO = /いいえ|いや|違|ちがう|やめ|修正|直し|変え|\bno\b|no
 // 声 / ボタンの先着で返す。{text} {button} {error} {cancelled}
 function listenOnce(vc) {
   return new Promise((resolve) => {
+    // 読み上げ中に止められていたら、マイクを開かない
+    if (vc.cancelled) return resolve({ cancelled: true });
     let done = false;
     const finish = (r) => {
       if (done) return;

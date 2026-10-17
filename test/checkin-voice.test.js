@@ -130,6 +130,14 @@ test('flow_cancelledDuringFlow_returnsCancelled', async () => {
   assert.equal(await runVoiceCheckin(vc), 'cancelled');
 });
 
+test('flow_cancelledWhileSpeaking_neverOpensMic', async () => {
+  const { vc, log } = makeVc({ listens: ['元気'] });
+  const orig = vc.say;
+  vc.say = async (t) => { await orig(t); vc.cancelled = true; };
+  assert.equal(await runVoiceCheckin(vc), 'cancelled');
+  assert.equal(log.listens, 0);
+});
+
 test('confirm_noThenFix_reparsesAndConfirmsAgain', async () => {
   const { vc, log } = makeVc({ listens: ['元気', 'いいえ', '時間を変えて', 'はい'], parses: [full(), full({ confirmText: 'CONFIRM2' })] });
   assert.equal(await runVoiceCheckin(vc), 'done');
