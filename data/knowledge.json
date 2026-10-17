@@ -1,0 +1,133 @@
+{
+  "_note": "RAG 用 Knowledge（仮）。公開情報をもとにした下書きで、verified=false のものは環境省・皇居外苑管理事務所等の資料で要確認。spots は data/spots.json の id。",
+  "chunks": [
+    {
+      "id": "gaien-overview", "category": "history", "spots": [], "tags": ["皇居外苑", "国民公園", "概要", "overview"], "verified": false,
+      "title": { "ja": "皇居外苑の概要", "en": "About Kokyo Gaien" },
+      "text": {
+        "ja": "皇居外苑は、皇居前広場やお濠、和田倉噴水公園などを含む国民公園で、環境省が管理しています。江戸城の外郭にあたる場所で、都心にありながら広い空とまとまった緑があります。",
+        "en": "Kokyo Gaien is a National Garden managed by the Ministry of the Environment, including the Imperial Palace Plaza, the moats and Wadakura Fountain Park. It sits on the outer grounds of the former Edo Castle and offers wide skies and greenery in the middle of Tokyo."
+      }
+    },
+    {
+      "id": "kuromatsu", "category": "plants", "spots": ["kuromatsu", "kusunoki"], "tags": ["黒松", "クロマツ", "松", "pine", "black pine", "木"], "verified": false,
+      "title": { "ja": "皇居前広場のクロマツ", "en": "Black pines of the Plaza" },
+      "text": {
+        "ja": "皇居前広場には約二千本ともいわれるクロマツが植えられ、芝生とともに独特の景観をつくっています。明治期に植栽されたのが始まりとされ、手入れの行き届いた樹形が特徴です。クロマツは樹皮が黒っぽく亀甲状に割れ、葉が硬く太いのが見分けるポイントです。",
+        "en": "The Imperial Palace Plaza is said to have around two thousand Japanese black pines, which together with the lawn create its distinctive scenery. Planting is said to date back to the Meiji era. Black pines have dark bark that cracks into plate-like patterns, and stiff, thick needles."
+      }
+    },
+    {
+      "id": "akamatsu-vs-kuromatsu", "category": "plants", "spots": ["kuromatsu"], "tags": ["赤松", "アカマツ", "黒松", "違い", "red pine", "difference"], "verified": false,
+      "title": { "ja": "クロマツとアカマツの見分け方", "en": "Black pine vs red pine" },
+      "text": {
+        "ja": "クロマツは樹皮が灰黒色で葉が硬く、触るとチクチクします。アカマツは幹の上の方が赤みを帯び、葉は細く柔らかめです。クロマツは海岸や都市部の植栽に多く、雄松とも呼ばれます。アカマツは女松とも呼ばれます。",
+        "en": "Black pine has grey-black bark and stiff, prickly needles. Red pine has reddish bark on its upper trunk and thinner, softer needles. Black pine is common on coasts and in urban plantings and is sometimes called the 'male pine'; red pine is called the 'female pine'."
+      }
+    },
+    {
+      "id": "kusunoki-statue", "category": "history", "spots": ["kusunoki"], "tags": ["楠木正成", "楠公", "銅像", "statue", "kusunoki"], "verified": false,
+      "title": { "ja": "楠木正成像", "en": "Statue of Kusunoki Masashige" },
+      "text": {
+        "ja": "楠木正成像は明治三十年代に完成した騎馬像で、高村光雲らが制作に関わったとされます。楠木正成は南北朝時代の武将です。像のそばには休憩所もあります。",
+        "en": "The equestrian statue of Kusunoki Masashige was completed around the 1900s, with sculptor Takamura Koun among its creators. Kusunoki was a samurai commander of the 14th century. There is a rest area nearby."
+      }
+    },
+    {
+      "id": "nijubashi", "category": "history", "spots": ["nijubashi"], "tags": ["二重橋", "正門", "石橋", "鉄橋", "bridge", "nijubashi"], "verified": false,
+      "title": { "ja": "二重橋", "en": "Nijubashi" },
+      "text": {
+        "ja": "皇居正門へ続く手前の石橋と、その奥の鉄橋をあわせて、一般に二重橋と呼んでいます。正式には奥の橋を正門鉄橋といいます。お濠の水面に映る姿も見どころです。",
+        "en": "The stone bridge leading to the main gate and the bridge behind it are together commonly called Nijubashi; strictly speaking, the rear one is the Seimon Tetsubashi. Their reflection on the water is part of the view."
+      }
+    },
+    {
+      "id": "sakuradamon", "category": "history", "spots": ["sakuradamon"], "tags": ["桜田門", "江戸城", "桜田門外の変", "gate", "sakuradamon"], "verified": false,
+      "title": { "ja": "桜田門", "en": "Sakuradamon Gate" },
+      "text": {
+        "ja": "桜田門は江戸城の外桜田門で、二つの門を組み合わせた枡形門の形が残っています。一八六〇年、大老井伊直弼が襲われた桜田門外の変の舞台として知られます。国の重要文化財です。",
+        "en": "Sakuradamon is the Soto-Sakurada Gate of Edo Castle, preserving its masugata style of two gates around a square court. It is known as the site of the 1860 Sakuradamon Incident, in which chief minister Ii Naosuke was assassinated. It is an Important Cultural Property."
+      }
+    },
+    {
+      "id": "wadakura", "category": "history", "spots": ["wadakura"], "tags": ["和田倉", "噴水", "fountain", "wadakura"], "verified": false,
+      "title": { "ja": "和田倉噴水公園", "en": "Wadakura Fountain Park" },
+      "text": {
+        "ja": "和田倉噴水公園は、上皇陛下のご成婚を記念して一九六一年に造られ、天皇陛下のご成婚を記念して一九九五年に再整備されました。噴水の水音と濠の景色が楽しめ、園内にはレストランもあります。",
+        "en": "Wadakura Fountain Park was built in 1961 to commemorate the wedding of the then Crown Prince (now Emperor Emeritus), and redeveloped in 1995 for the wedding of the current Emperor. You can enjoy the sound of the fountains and views of the moat; there is also a restaurant."
+      }
+    },
+    {
+      "id": "moats-birds", "category": "nature", "spots": ["babasaki", "nijubashi", "wadakura"], "tags": ["濠", "お濠", "鳥", "カモ", "サギ", "moat", "bird", "duck", "heron"], "verified": false,
+      "title": { "ja": "お濠と水鳥", "en": "Moats and water birds" },
+      "text": {
+        "ja": "お濠では季節によってカモ類、サギ類、カワウなどの水鳥が見られます。冬は渡ってきたカモ類が多く、水面でじっとしている姿を観察できます。石垣の上の松や水面の反射も、ゆっくり眺めたい景色です。",
+        "en": "Depending on the season, you can see ducks, herons and cormorants on the moats. In winter, migratory ducks are common and can be watched resting on the water. Pines on top of the stone walls and their reflections are also worth a slow look."
+      }
+    },
+    {
+      "id": "season-winter-spring", "category": "nature", "spots": [], "season": ["winter", "spring"], "tags": ["季節", "梅", "桜", "冬", "春", "season", "plum", "cherry"], "verified": false,
+      "title": { "ja": "冬から春の見どころ", "en": "Winter to spring highlights" },
+      "text": {
+        "ja": "二月から三月にかけては冬鳥が残り、気温の上昇とともに芽吹きが始まります。三月下旬には周辺の濠沿いで桜が咲き始めることがあります。開花は年によって変わるため、その日の様子を自分の目で確かめてください。",
+        "en": "From February to March, winter birds linger and buds begin to open as it warms. In late March, cherry blossoms may begin along nearby moats. Blooming varies by year, so check with your own eyes on the day."
+      }
+    },
+    {
+      "id": "season-summer-autumn", "category": "nature", "spots": [], "season": ["summer", "autumn"], "tags": ["季節", "夏", "秋", "紅葉", "season", "summer", "autumn"], "verified": false,
+      "title": { "ja": "夏から秋の見どころ", "en": "Summer to autumn highlights" },
+      "text": {
+        "ja": "夏は木陰と水辺の涼しさを感じられますが、広場は日差しが強く暑くなります。秋は空気が澄み、遠くの景色がはっきり見える日が多くなります。",
+        "en": "In summer you can feel the coolness of shade and water, but the open plaza gets very hot. In autumn the air is clear and distant views are often sharp."
+      }
+    },
+    {
+      "id": "rules", "category": "notice", "spots": [], "tags": ["注意", "ルール", "芝生", "ドローン", "立ち入り", "rules", "lawn", "drone", "notice"], "verified": false,
+      "title": { "ja": "利用上の注意", "en": "Visitor rules" },
+      "text": {
+        "ja": "芝生には立ち入りできない場所があります。表示に従い、園路を歩いてください。ドローンの飛行は禁止されています。皇宮警察などの警備が行われているので、係員の指示に従ってください。",
+        "en": "Some lawns are off-limits; please follow the signs and stay on the paths. Flying drones is prohibited. Security officers are on duty, so please follow their instructions."
+      }
+    },
+    {
+      "id": "facilities", "category": "notice", "spots": [], "tags": ["トイレ", "休憩", "水", "toilet", "restroom", "rest", "water"], "verified": false,
+      "title": { "ja": "休憩所・トイレ", "en": "Rest areas and restrooms" },
+      "text": {
+        "ja": "楠公休憩所や和田倉噴水公園の周辺に、休憩所やトイレがあります。正確な位置は現地の案内板で確認してください。",
+        "en": "There are rest areas and restrooms around the Kusunoki rest area and Wadakura Fountain Park. Please check the on-site signboards for exact locations."
+      }
+    },
+    {
+      "id": "safety", "category": "notice", "spots": [], "tags": ["体調", "暑さ", "熱中症", "寒さ", "具合", "safety", "heat", "unwell"], "verified": true,
+      "title": { "ja": "体調と安全", "en": "Health and safety" },
+      "text": {
+        "ja": "体調がすぐれないときは、無理をせず日陰やベンチで休んでください。暑い日はこまめに水分をとってください。緊急時は一一九番に連絡してください。",
+        "en": "If you feel unwell, don't push yourself; rest in the shade or on a bench. Drink water often on hot days. In an emergency, call 119."
+      }
+    },
+    {
+      "id": "breathing", "category": "wellness", "spots": [], "tags": ["呼吸", "深呼吸", "breathing", "breath", "リラックス"], "verified": true,
+      "title": { "ja": "ゆっくりした呼吸", "en": "Slow breathing" },
+      "text": {
+        "ja": "吐く息を吸う息より長くすると、体が落ち着きやすいといわれます。例えば四つ数えて吸い、六つ数えて吐く。苦しくない範囲で、自分のペースで行ってください。",
+        "en": "Making the out-breath longer than the in-breath is said to help the body settle. For example, in for four counts and out for six. Keep it comfortable and at your own pace."
+      }
+    },
+    {
+      "id": "eyes", "category": "wellness", "spots": ["babasaki", "nijubashi"], "tags": ["目", "視線", "遠く", "スマホ", "eyes", "gaze", "far", "screen"], "verified": true,
+      "title": { "ja": "遠くを見ること", "en": "Looking far away" },
+      "text": {
+        "ja": "スマートフォンを見ていると、視線は近くの狭い範囲に集まりがちです。遠くの景色を、視野の端まで広げるように眺めると、目と気持ちがゆるみやすくなります。",
+        "en": "Looking at a phone keeps your gaze on a near, narrow area. Gazing at a distant view while letting your vision widen to its edges can help both eyes and mind relax."
+      }
+    },
+    {
+      "id": "about-instructor", "category": "service", "spots": [], "tags": ["このサービス", "使い方", "沈黙", "静か", "how", "service", "silence"], "verified": true,
+      "title": { "ja": "このサービスについて", "en": "About this service" },
+      "text": {
+        "ja": "デジタルネイチャー＆ウェルネスインストラクターは、たくさん説明することよりも、あなたの注意を自然と自分の感覚に戻すことを大切にしています。ときどき意図的に黙る時間があります。それは不具合ではなく、自然とつながるための時間です。",
+        "en": "The Digital Nature & Wellness Instructor values returning your attention to nature and your own senses over lots of explanation. At times it will intentionally stay quiet. This is not a malfunction; it is time to connect with nature."
+      }
+    }
+  ]
+}

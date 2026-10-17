@@ -1,0 +1,15 @@
+{
+  "name": "kokyo-gaien-wellness-instructor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "デジタルネイチャー＆ウェルネスインストラクター 皇居外苑版 (Phase 1 prototype)",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "start:lan": "node -e \"process.env.HOST='0.0.0.0';require('./server.js')\"",
+    "test": "node --test \"test/*.test.js\""
+  }
+}

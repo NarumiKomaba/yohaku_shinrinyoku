@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>利用データ集計 — 皇居外苑版</title>
+  <style>
+    :root { --ink:#1f2a22; --muted:#5d6b60; --line:#d9d3c6; --accent:#2f5d3a; --bg:#f4f1ea; font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif; }
+    body { margin:0; padding:20px; background:var(--bg); color:var(--ink); }
+    main { max-width:1100px; margin:0 auto; }
+    h1 { font-size:1.2rem; margin:0 0 4px; }
+    .meta { color:var(--muted); font-size:.85rem; margin:0 0 16px; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:14px; }
+    section { background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px 16px; }
+    section h2 { font-size:.95rem; margin:0 0 8px; color:var(--accent); }
+    table { width:100%; border-collapse:collapse; font-size:.9rem; }
+    td { padding:4px 0; border-bottom:1px solid #eee; vertical-align:top; }
+    td:last-child { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; padding-left:12px; }
+    .wide { grid-column:1/-1; }
+    .refl td { text-align:left !important; white-space:normal !important; }
+    button { font:inherit; border-radius:8px; border:1px solid var(--accent); background:#fff; color:var(--accent); padding:6px 12px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Phase 1 利用データ集計</h1>
+    <p class="meta" id="meta"></p>
+    <p><button id="reload">更新</button> <a href="/guide.html">ガイドさんページ</a> <button id="logout" hidden>ログアウト</button></p>
+    <form id="login" hidden><p>ガイドさんの合言葉を入力してください。</p><input id="passcode" type="password" autocomplete="current-password" required> <button>ログイン</button> <span id="login-error"></span></form>
+    <div class="cards" id="cards"></div>
+  </main>
+  <script type="module">
+    const $ = (s) => document.querySelector(s);
+    const fmt = (v, d = 1) => (v == null ? '—' : typeof v === 'number' ? (Number.isInteger(v) ? v.toLocaleString() : v.toFixed(d)) : String(v));
+
+    function card(title, rows, cls = '') {
+      const sec = document.createElement('section');
+      if (cls) sec.className = cls;
+      const h = document.createElement('h2');
+      h.textContent = title;
+      const table = document.createElement('table');
+      for (const [k, v] of rows) {
+        const tr = table.insertRow();
+        tr.insertCell().textContent = k;
+        tr.insertCell().textContent = fmt(v);
+      }
+      if (!rows.length) table.insertRow().insertCell().textContent = 'データなし';
+      sec.append(h, table);
+      return sec;
+    }
+    const entries = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1]);
+
+    async function load() {
+      const token = sessionStorage.getItem('guideToken') || '';
+      const res = token ? await fetch('/api/stats', { headers: { 'X-Guide-Token': token } }) : { status: 401 };
+      if (res.status === 401) {
+        sessionStorage.removeItem('guideToken');
+        $('#login').hidden = false; $('#logout').hidden = true; $('#cards').replaceChildren();
+        return;
+      }
+      $('#login').hidden = true; $('#logout').hidden = false;
+      const s = await res.json();
+      $('#meta').textContent = `集計時刻 ${new Date(s.generatedAt).toLocaleString()} ／ モデル ${s.model}`;
+      const f = s.funnel;
+      const rate = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+      const reflections = s.reflections.map((r) => [`${new Date(r.ts).toLocaleString()} [${r.lang}]`, [r.noticed, r.changed, r.nextWish].map((x) => x || '—').join(' ／ ')]);
+      const notes = card('チェックイン自由記述（新しい順）', s.checkinNotes.map((n) => [new Date(n.ts).toLocaleString(), n.note]), 'wide refl');
+      const refl = card('最近のふりかえり（気づき ／ 変化 ／ 次にしたいこと）', reflections, 'wide refl');
+
+      $('#cards').replaceChildren(
+        card('Market: 販売 → 利用', [
+          ['販売数（デモコード含む）', f.purchases],
+          ['利用開始数', f.started],
+          ['完了数', f.completed],
+          ['完了率', rate(f.completed, f.started)],
+          ['平均利用時間（分）', s.avgDurationMin],
+        ]),
+        card('Economics: AI コスト（概算）', [
+          ['LLM 呼び出し回数', s.usage.llmCalls],
+          ['入力トークン', s.usage.inputTokens],
+          ['出力トークン', s.usage.outputTokens],
+          ['合計コスト（円）', s.usage.totalCostJpy],
+          ['1 利用あたり（円）', s.usage.costPerSessionJpy],
+          ['STT 利用回数（ブラウザ・無料）', s.usage.sttCount],
+          ['TTS 読み上げ文字数（ブラウザ・無料）', s.usage.ttsChars],
+        ]),
+        card('Experience: アンケート', [
+          ['回答数', s.survey.n],
+          ['満足度（1–5）', s.survey.satisfactionAvg],
+          ['推奨度（0–10）', s.survey.recommendAvg],
+          ...entries(s.survey.price).map(([k, v]) => [`価格: ${k}`, v]),
+          ...entries(s.survey.screen).map(([k, v]) => [`画面: ${k}`, v]),
+        ]),
+        card('次に興味があるもの', entries(s.survey.next)),
+        card('言語 / モード', [...entries(s.language).map(([k, v]) => [`言語 ${k}`, v]), ...entries(s.mode).map(([k, v]) => [`モード ${k}`, v])]),
+        card('Check-in', [...entries(s.checkinState).map(([k, v]) => [`状態 ${k}`, v]), ...entries(s.checkinDesire).map(([k, v]) => [`希望 ${k}`, v])]),
+        card('Spot 到達（セッション数）', entries(s.spotReach)),
+        card('Nature Interaction 実行', [...entries(s.interactions), ['静けさの平均（秒）', s.silenceAvgSec]]),
+        card('ガイドさんへの質問（guide_ask）', [['質問回数', s.guideAsks.total], ...entries(s.guideAsks.answered).map(([k, v]) => [`返事: ${k}`, v])]),
+        card('LLM 呼び出しの内訳（purpose）', entries(s.usage.byPurpose)),
+        card('質問', [['合計', s.questions.total], ...entries(s.questions.byInput).map(([k, v]) => [`入力: ${k}`, v])]),
+        card('Technology: エラー', entries(s.errors)),
+        notes,
+        refl,
+      );
+    }
+    $('#reload').addEventListener('click', load);
+    $('#logout').addEventListener('click', () => { sessionStorage.removeItem('guideToken'); load(); });
+    $('#login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const r = await fetch('/api/guide/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: $('#passcode').value }) });
+      if (!r.ok) { $('#login-error').textContent = '合言葉が違います'; return; }
+      sessionStorage.setItem('guideToken', (await r.json()).token);
+      $('#passcode').value = ''; $('#login-error').textContent = '';
+      load();
+    });
+    load();
+  </script>
+</body>
+</html>

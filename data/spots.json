@@ -1,0 +1,730 @@
+{
+  "_note": "Spot = 位置(エリア) + 素材(materials)。素材はガイドさんが登録する「話の種」で、AI がその場で話す内容を組み立てる。docs/DESIGN.md 参照。",
+  "spots": [
+    {
+      "id": "wadakura",
+      "order": 1,
+      "enabled": true,
+      "name": {
+        "ja": "和田倉噴水公園",
+        "en": "Wadakura Fountain Park"
+      },
+      "kind": "water",
+      "lat": 35.68395,
+      "lng": 139.76125,
+      "radius": 40,
+      "materials": [
+        {
+          "id": "wadakura-m1",
+          "type": "fact",
+          "text": "和田倉噴水公園に着きました。水の音がする場所です。説明はひとまず置いて、まずは耳から始めましょう。",
+          "lang": "ja",
+          "topics": [
+            "history",
+            "nature"
+          ],
+          "source": "seed",
+          "verified": false,
+          "createdAt": "2026-10-04T00:00:00.000Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "LISTEN"
+        },
+        {
+          "type": "SILENCE",
+          "seconds": 30
+        }
+      ],
+      "osm": null
+    },
+    {
+      "id": "monument-to-the-wedding-of-his-imperial",
+      "enabled": true,
+      "name": {
+        "ja": "皇太子殿下御結婚記念碑",
+        "en": "Monument to the wedding of His Imperial Highness the Crown Prince"
+      },
+      "kind": "landmark",
+      "lat": 35.683295,
+      "lng": 139.760411,
+      "radius": 30,
+      "materials": [
+        {
+          "id": "monument-to-the-wedding-of-his-imperial-osm-n5527856423-1",
+          "type": "fact",
+          "text": "皇太子殿下御結婚記念碑には「この噴水は 皇太子殿下明仁親王の御結婚を記念し 全国民の愛説の熱意によって建設された われわれは この現代造形美の結晶を 平和日本の象徴として 永く後世に遺さんとするものである 昭和三十六年四月十日」という文字が記されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "monument-to-the-wedding-of-his-imperial-osm-n5527856423-2",
+          "type": "fact",
+          "text": "皇太子殿下御結婚記念碑は、記念碑として記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "STOP"
+        },
+        {
+          "type": "LOOK"
+        }
+      ],
+      "osm": {
+        "type": "node",
+        "id": 5527856423,
+        "tags": {
+          "historic": "memorial",
+          "inscription": "この噴水は 皇太子殿下明仁親王の御結婚を記念し 全国民の愛説の熱意によって建設された われわれは この現代造形美の結晶を 平和日本の象徴として 永く後世に遺さんとするものである\n昭和三十六年四月十日",
+          "memorial": "plaque",
+          "name": "皇太子殿下御結婚記念碑",
+          "name:en": "Monument to the wedding of His Imperial Highness the Crown Prince"
+        }
+      },
+      "order": 2
+    },
+    {
+      "id": "osm-n5500162081",
+      "enabled": true,
+      "name": {
+        "ja": "御製",
+        "en": "御製"
+      },
+      "kind": "landmark",
+      "lat": 35.683663,
+      "lng": 139.760556,
+      "radius": 30,
+      "materials": [
+        {
+          "id": "osm-n5500162081-osm-n5500162081-1",
+          "type": "fact",
+          "text": "御製には「御製 いにしへの 人も守り来し 日の本の 森の栄えを 共に願はむ 金子鷗亭謹書」という文字が記されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "osm-n5500162081-osm-n5500162081-2",
+          "type": "fact",
+          "text": "御製は、記念碑として記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "STOP"
+        },
+        {
+          "type": "LOOK"
+        }
+      ],
+      "osm": {
+        "type": "node",
+        "id": 5500162081,
+        "tags": {
+          "historic": "memorial",
+          "inscription": "御製 いにしへの 人も守り来し 日の本の 森の栄えを 共に願はむ 金子鷗亭謹書",
+          "memorial": "sculpture",
+          "name": "御製"
+        }
+      },
+      "order": 3
+    },
+    {
+      "id": "babasaki",
+      "order": 4,
+      "enabled": true,
+      "name": {
+        "ja": "馬場先濠のほとり",
+        "en": "Babasaki Moat"
+      },
+      "kind": "water",
+      "lat": 35.68215,
+      "lng": 139.75925,
+      "radius": 40,
+      "materials": [
+        {
+          "id": "babasaki-m1",
+          "type": "fact",
+          "text": "お濠の水面が広がっています。スマートフォンを見ていた目は、近くの一点に集まりがちです。",
+          "lang": "ja",
+          "topics": [
+            "nature"
+          ],
+          "source": "seed",
+          "verified": false,
+          "createdAt": "2026-10-04T00:00:00.000Z"
+        },
+        {
+          "id": "babasaki-m2",
+          "type": "sense",
+          "text": "いちばん遠くの水面か、向こう岸の木を見てください。視野の端まで、ふわっと広げるつもりで。",
+          "lang": "ja",
+          "topics": [
+            "senses"
+          ],
+          "source": "seed",
+          "verified": false,
+          "createdAt": "2026-10-04T00:00:00.000Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "LOOK"
+        },
+        {
+          "type": "WALK"
+        }
+      ],
+      "osm": null
+    },
+    {
+      "id": "kusunoki",
+      "order": 5,
+      "enabled": true,
+      "name": {
+        "ja": "楠木正成像",
+        "en": "Statue of Kusunoki Masashige"
+      },
+      "kind": "landmark",
+      "lat": 35.677915,
+      "lng": 139.758474,
+      "radius": 35,
+      "materials": [
+        {
+          "id": "kusunoki-m1",
+          "type": "fact",
+          "text": "楠木正成の像です。明治時代に造られた銅像で、皇居外苑の目印のひとつです。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "seed",
+          "verified": false,
+          "createdAt": "2026-10-04T00:00:00.000Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "STOP"
+        },
+        {
+          "type": "LOOK"
+        }
+      ],
+      "osm": null
+    },
+    {
+      "id": "kuromatsu",
+      "order": 6,
+      "enabled": true,
+      "name": {
+        "ja": "黒松の広場",
+        "en": "Black Pine Lawn"
+      },
+      "kind": "trees",
+      "lat": 35.68,
+      "lng": 139.756,
+      "radius": 50,
+      "materials": [
+        {
+          "id": "kuromatsu-m1",
+          "type": "fact",
+          "text": "このあたりにはクロマツが点々と立っています。幹の亀甲のような模様や、枝の伸び方が一本ずつ違います。",
+          "lang": "ja",
+          "topics": [
+            "plant"
+          ],
+          "source": "seed",
+          "verified": false,
+          "createdAt": "2026-10-04T00:00:00.000Z"
+        },
+        {
+          "id": "kuromatsu-m2",
+          "type": "sense",
+          "text": "気になる一本を選んで、幹の模様をゆっくり目でなぞってみてください。",
+          "lang": "ja",
+          "topics": [
+            "senses"
+          ],
+          "source": "seed",
+          "verified": false,
+          "createdAt": "2026-10-04T00:00:00.000Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "LOOK"
+        },
+        {
+          "type": "SILENCE",
+          "seconds": 60
+        }
+      ],
+      "osm": null
+    },
+    {
+      "id": "nijubashi",
+      "order": 7,
+      "enabled": true,
+      "name": {
+        "ja": "二重橋を望む場所",
+        "en": "View of Nijubashi Bridge"
+      },
+      "kind": "view",
+      "lat": 35.67975,
+      "lng": 139.7535,
+      "radius": 40,
+      "materials": [
+        {
+          "id": "nijubashi-m1",
+          "type": "fact",
+          "text": "お濠の向こうに、石の橋と、その奥の橋が見えます。一般に二重橋と呼ばれている景色です。",
+          "lang": "ja",
+          "topics": [
+            "history",
+            "view"
+          ],
+          "source": "seed",
+          "verified": false,
+          "createdAt": "2026-10-04T00:00:00.000Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "REST"
+        },
+        {
+          "type": "SILENCE",
+          "seconds": 120
+        }
+      ],
+      "osm": null
+    },
+    {
+      "id": "sakuradamon",
+      "order": 8,
+      "enabled": true,
+      "name": {
+        "ja": "桜田門",
+        "en": "Sakuradamon Gate"
+      },
+      "kind": "gate",
+      "lat": 35.678502,
+      "lng": 139.75394,
+      "radius": 40,
+      "materials": [
+        {
+          "id": "sakuradamon-m1",
+          "type": "fact",
+          "text": "桜田門です。江戸城の門が今も残っています。今日の道のりも、ここでひと区切りです。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "seed",
+          "verified": false,
+          "createdAt": "2026-10-04T00:00:00.000Z"
+        },
+        {
+          "id": "sakuradamon-osm-w145400030-1",
+          "type": "fact",
+          "text": "桜田門の開始時期は ~1663 と記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "sakuradamon-osm-w145400030-2",
+          "type": "fact",
+          "text": "桜田門は、文化財などの指定・登録に関わる場所として記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history",
+            "culture"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "sakuradamon-osm-w145400030-3",
+          "type": "fact",
+          "text": "桜田門は、城門として記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "STOP"
+        }
+      ],
+      "osm": null
+    },
+    {
+      "id": "i-the-pumpkin",
+      "enabled": false,
+      "name": {
+        "ja": "われは南瓜",
+        "en": "I, the Pumpkin"
+      },
+      "kind": "landmark",
+      "lat": 35.679845,
+      "lng": 139.76285,
+      "radius": 30,
+      "materials": [
+        {
+          "id": "i-the-pumpkin-osm-n4436157078-1",
+          "type": "fact",
+          "text": "われは南瓜の開始時期は 2013年 と記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "i-the-pumpkin-osm-n4436157078-2",
+          "type": "fact",
+          "text": "われは南瓜の作者・設計者として「草間彌生」が記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history",
+            "culture"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "STOP"
+        },
+        {
+          "type": "LOOK"
+        }
+      ],
+      "osm": {
+        "type": "node",
+        "id": 4436157078,
+        "tags": {
+          "artist_name": "草間彌生",
+          "artist_name:en": "Yayoi Kusama",
+          "artwork_type": "sculpture",
+          "name": "われは南瓜",
+          "name:en": "I, the Pumpkin",
+          "name:es": "I, the Pumpkin",
+          "start_date": "2013",
+          "tourism": "artwork",
+          "wheelchair": "yes"
+        }
+      },
+      "order": 9
+    },
+    {
+      "id": "ninomaru-garden",
+      "enabled": false,
+      "name": {
+        "ja": "二の丸庭園",
+        "en": "Ninomaru garden"
+      },
+      "kind": "garden",
+      "lat": 35.687472,
+      "lng": 139.758664,
+      "radius": 50,
+      "materials": [
+        {
+          "id": "ninomaru-garden-osm-w43934002-1",
+          "type": "fact",
+          "text": "二の丸庭園の開始時期は 1630年 と記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "ninomaru-garden-osm-w43934002-2",
+          "type": "fact",
+          "text": "二の丸庭園の作者・設計者として「小堀政一」が記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history",
+            "culture"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "ninomaru-garden-osm-w43934002-3",
+          "type": "fact",
+          "text": "二の丸庭園は、庭園として記録されています。",
+          "lang": "ja",
+          "topics": [
+            "nature"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "WALK"
+        },
+        {
+          "type": "SILENCE",
+          "seconds": 60
+        }
+      ],
+      "osm": {
+        "type": "way",
+        "id": 43934002,
+        "tags": {
+          "architect": "小堀政一",
+          "architect:wikidata": "Q541040",
+          "leisure": "garden",
+          "name": "二の丸庭園",
+          "name:en": "Ninomaru garden",
+          "name:es": "Jardín del Segundo Recinto",
+          "name:fr": "Jardin Ninomaru",
+          "name:ja": "二の丸庭園",
+          "name:ja-Hira": "にのまるていえん",
+          "name:ja-Latn": "Ninomaru Teien",
+          "name:ko": "니노마루 정원",
+          "start_date": "1630"
+        }
+      },
+      "order": 10
+    },
+    {
+      "id": "osm-n5500368139",
+      "enabled": false,
+      "name": {
+        "ja": "市内最初ノ竝木",
+        "en": "市内最初ノ竝木"
+      },
+      "kind": "landmark",
+      "lat": 35.68611,
+      "lng": 139.761493,
+      "radius": 30,
+      "materials": [
+        {
+          "id": "osm-n5500368139-osm-n5500368139-1",
+          "type": "fact",
+          "text": "市内最初ノ竝木には「ニセアカシア 市内最初ノ竝木」という文字が記されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "osm-n5500368139-osm-n5500368139-2",
+          "type": "fact",
+          "text": "市内最初ノ竝木は、記念碑として記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "STOP"
+        },
+        {
+          "type": "LOOK"
+        }
+      ],
+      "osm": {
+        "type": "node",
+        "id": 5500368139,
+        "tags": {
+          "historic": "memorial",
+          "inscription": "ニセアカシア 市内最初ノ竝木",
+          "material": "stone",
+          "name": "市内最初ノ竝木",
+          "wheelchair": "limited"
+        }
+      },
+      "order": 11
+    },
+    {
+      "id": "osm-n5246522559",
+      "enabled": false,
+      "name": {
+        "ja": "TOWER OF CONNECT",
+        "en": "TOWER OF CONNECT"
+      },
+      "kind": "landmark",
+      "lat": 35.686791,
+      "lng": 139.763242,
+      "radius": 30,
+      "materials": [
+        {
+          "id": "osm-n5246522559-osm-n5246522559-1",
+          "type": "fact",
+          "text": "TOWER OF CONNECTの作者・設計者として「ASAO TOKOLO」が記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history",
+            "culture"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "STOP"
+        },
+        {
+          "type": "LOOK"
+        }
+      ],
+      "osm": {
+        "type": "node",
+        "id": 5246522559,
+        "tags": {
+          "artist_name": "ASAO TOKOLO",
+          "artwork_type": "sculpture",
+          "name": "TOWER OF CONNECT",
+          "source": "survey",
+          "tourism": "artwork",
+          "wheelchair": "yes"
+        }
+      },
+      "order": 12
+    },
+    {
+      "id": "dr-joze-rizal",
+      "enabled": false,
+      "name": {
+        "ja": "ホセ・リサール博士",
+        "en": "Dr. Joze Rizal"
+      },
+      "kind": "landmark",
+      "lat": 35.674243,
+      "lng": 139.758429,
+      "radius": 30,
+      "materials": [
+        {
+          "id": "dr-joze-rizal-osm-n13938516533-1",
+          "type": "fact",
+          "text": "ホセ・リサール博士の開始時期は 1961年 と記録されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        },
+        {
+          "id": "dr-joze-rizal-osm-n13938516533-2",
+          "type": "fact",
+          "text": "ホセ・リサール博士には「Dr. Jose Rizal NATIONAL HERO OF THE PHILIPPINES STAYED IN 1888 AT TOKYO HOTEL LOCATED AT THIS SITE UNVEILD JUN 19, 1961 」という文字が記されています。",
+          "lang": "ja",
+          "topics": [
+            "history"
+          ],
+          "source": "osm",
+          "author": "",
+          "verified": false,
+          "createdAt": "2026-10-03T23:50:32.278Z"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "STOP"
+        },
+        {
+          "type": "LOOK"
+        }
+      ],
+      "osm": {
+        "type": "node",
+        "id": 13938516533,
+        "tags": {
+          "artwork_type": "bust",
+          "inscription": "Dr. Jose Rizal NATIONAL HERO OF THE PHILIPPINES STAYED IN 1888 AT TOKYO HOTEL LOCATED AT THIS SITE UNVEILD JUN 19, 1961  フィリピンの国民的英雄 ホセ・リサール博士 1888年この地東京ホテルに滞在す 1961年6月19日建之",
+          "mapillary:2": "797839804709535",
+          "material": "steel",
+          "name": "ホセ・リサール博士",
+          "name:en": "Dr. Joze Rizal",
+          "name:ja": "ホセ・リサール博士",
+          "name:ja-Hira": "ほせ りさーる はかせ",
+          "start_date": "1961",
+          "tourism": "artwork",
+          "wikidata": "Q1500",
+          "wikipedia": "ja:ホセ・リサール"
+        }
+      },
+      "order": 13
+    }
+  ],
+  "version": 2
+}

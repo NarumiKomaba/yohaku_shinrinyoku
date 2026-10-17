@@ -1,0 +1,397 @@
+{
+  "_note": "Refresh Walk プロトコル定義。エンジン (public/engine.js) とは疎結合で、場所や目的が変わってもこのファイルの差し替えで対応する。",
+  "id": "refresh-walk-kokyo-gaien-v1",
+  "protocol": [
+    "slowdown",
+    "notice",
+    "walk",
+    "pause",
+    "reflect",
+    "return"
+  ],
+  "phaseLabels": {
+    "slowdown": {
+      "ja": "ゆるめる",
+      "en": "Slow down"
+    },
+    "notice": {
+      "ja": "気づく",
+      "en": "Notice"
+    },
+    "walk": {
+      "ja": "歩く",
+      "en": "Walk"
+    },
+    "pause": {
+      "ja": "とどまる",
+      "en": "Pause"
+    },
+    "reflect": {
+      "ja": "ふりかえる",
+      "en": "Reflect"
+    },
+    "return": {
+      "ja": "もどる",
+      "en": "Return"
+    }
+  },
+  "walkCueIntervalSec": 240,
+  "silenceChime": true,
+  "opening": {
+    "ja": [
+      "ようこそ。これから、皇居外苑をゆっくり歩きます。",
+      "画面は見なくて大丈夫です。スマートフォンはポケットにしまってください。",
+      "私はたくさんは話しません。ときどき声をかけて、ときどき黙ります。",
+      "まず、鼻から四つ数えて吸って、口から六つ数えて吐きます。これを三回、自分のペースで。"
+    ],
+    "en": [
+      "Welcome. We will walk slowly through Kokyo Gaien together.",
+      "You don't need the screen. Please put your phone in your pocket.",
+      "I won't talk much. Sometimes I will speak, and sometimes I will stay quiet.",
+      "First, breathe in through your nose for four counts, and out through your mouth for six. Three times, at your own pace."
+    ]
+  },
+  "checkin": {
+    "states": [
+      {
+        "id": "head",
+        "label": {
+          "ja": "頭が疲れている",
+          "en": "Mentally tired"
+        },
+        "cue": {
+          "ja": "頭が疲れているときは、遠くを見ることから。今日は景色の広さをたくさん使いましょう。",
+          "en": "When the mind is tired, looking far away helps. Today we'll use the wide views a lot."
+        },
+        "prefer": [
+          "LOOK"
+        ]
+      },
+      {
+        "id": "body",
+        "label": {
+          "ja": "体が疲れている",
+          "en": "Physically tired"
+        },
+        "cue": {
+          "ja": "体が疲れているなら、急ぐ必要はありません。休みたくなったら、いつでも立ち止まってください。",
+          "en": "If your body is tired, there's no need to hurry. Stop and rest whenever you like."
+        },
+        "prefer": [
+          "REST",
+          "STOP"
+        ]
+      },
+      {
+        "id": "low",
+        "label": {
+          "ja": "気分が沈んでいる",
+          "en": "Feeling low"
+        },
+        "cue": {
+          "ja": "気分が重い日は、何かを頑張らなくていい日です。聞こえてくる音に任せてみましょう。",
+          "en": "On a heavy day, you don't need to try hard. Let the sounds around you carry you."
+        },
+        "prefer": [
+          "LISTEN"
+        ]
+      },
+      {
+        "id": "ok",
+        "label": {
+          "ja": "わりと元気",
+          "en": "Feeling fine"
+        },
+        "cue": {
+          "ja": "元気な日は、足の裏の感覚に注意を向けながら、気持ちよく歩きましょう。",
+          "en": "On a good day, let's walk pleasantly while paying attention to the soles of your feet."
+        },
+        "prefer": [
+          "WALK"
+        ]
+      }
+    ],
+    "desires": [
+      {
+        "id": "refresh",
+        "label": {
+          "ja": "頭をすっきりさせたい",
+          "en": "Clear my head"
+        },
+        "silenceFactor": 1.0,
+        "cueFactor": 0.8
+      },
+      {
+        "id": "calm",
+        "label": {
+          "ja": "落ち着きたい",
+          "en": "Calm down"
+        },
+        "silenceFactor": 1.5,
+        "cueFactor": 1.6
+      },
+      {
+        "id": "nature",
+        "label": {
+          "ja": "自然を感じたい",
+          "en": "Feel nature"
+        },
+        "silenceFactor": 1.25,
+        "cueFactor": 1.0
+      },
+      {
+        "id": "body",
+        "label": {
+          "ja": "体をほぐしたい",
+          "en": "Loosen my body"
+        },
+        "silenceFactor": 1.0,
+        "cueFactor": 1.0
+      }
+    ],
+    "durations": [
+      {
+        "value": 20,
+        "label": {
+          "ja": "20分",
+          "en": "20 min"
+        }
+      },
+      {
+        "value": 40,
+        "label": {
+          "ja": "40分",
+          "en": "40 min"
+        }
+      },
+      {
+        "value": 60,
+        "label": {
+          "ja": "60分",
+          "en": "60 min"
+        }
+      },
+      {
+        "value": null,
+        "label": {
+          "ja": "時間は気にしない",
+          "en": "No time limit"
+        }
+      }
+    ]
+  },
+  "interactionPools": {
+    "LOOK": {
+      "ja": [
+        "少しだけ顔を上げて、いちばん遠くにある緑を見てください。",
+        "目の前の木の、葉と空の境目を見てみましょう。",
+        "地面の近くと、空の高いところ。上と下を、ゆっくり交互に見てください。"
+      ],
+      "en": [
+        "Lift your face a little and look at the farthest green you can see.",
+        "Look at the edge where the leaves meet the sky.",
+        "Look near the ground, then high in the sky. Slowly, back and forth."
+      ]
+    },
+    "LISTEN": {
+      "ja": [
+        "いちばん遠くから聞こえる音を探してみてください。",
+        "鳥の声、風の音、人の足音。いくつの音が聞こえるか、数えてみましょう。",
+        "右から聞こえる音と、左から聞こえる音。その違いに耳を向けてください。"
+      ],
+      "en": [
+        "Try to find the most distant sound you can hear.",
+        "Birds, wind, footsteps. How many different sounds can you count?",
+        "Notice the sounds on your right, and the sounds on your left."
+      ]
+    },
+    "WALK": {
+      "ja": [
+        "足の裏が地面に触れる感覚を感じながら歩きましょう。かかと、土踏まず、つま先。",
+        "歩く速さを、いまの半分くらいにしてみてください。",
+        "砂利の音、土の柔らかさ。足もとから伝わるものを感じながら進みましょう。"
+      ],
+      "en": [
+        "Walk while feeling your soles touch the ground. Heel, arch, toes.",
+        "Try walking at about half your current pace.",
+        "The crunch of gravel, the softness of the earth. Feel what comes up through your feet as you go."
+      ]
+    },
+    "STOP": {
+      "ja": [
+        "ここで一度、立ち止まりましょう。両足に体重が乗っているのを感じてください。",
+        "足を止めて、ひと呼吸。いま、どんな景色の中にいるでしょうか。"
+      ],
+      "en": [
+        "Let's stop here for a moment. Feel your weight resting on both feet.",
+        "Stop, and take one breath. What kind of scene are you standing in right now?"
+      ]
+    },
+    "REST": {
+      "ja": [
+        "座れる場所があれば、少し腰を下ろしましょう。肩の力を、ふっと抜いてください。",
+        "休憩しましょう。急ぐ理由は、いまはひとつもありません。"
+      ],
+      "en": [
+        "If there's a place to sit, sit down for a while. Let your shoulders drop.",
+        "Let's rest. Right now, there is no reason to hurry."
+      ]
+    },
+    "SILENCE": {
+      "ja": [
+        "ここから少し、案内を休みます。イヤホンを少し外して、周りの音を聞いてみてください。",
+        "しばらく私は黙ります。好きなだけ、この場所にいてください。"
+      ],
+      "en": [
+        "I'll pause the guidance for a while. Take out one earbud and listen to what's around you.",
+        "I'll be quiet for a while. Stay here as long as you like."
+      ]
+    }
+  },
+  "timeUp": {
+    "text": {
+      "ja": "予定の時間になりました。ここで終えますか、もう少し歩きますか？",
+      "en": "Your planned time is up. Would you like to finish here, or walk a little longer?"
+    },
+    "options": [
+      {
+        "id": "end",
+        "label": {
+          "ja": "終える",
+          "en": "Finish"
+        }
+      },
+      {
+        "id": "more",
+        "label": {
+          "ja": "もう少し歩く",
+          "en": "Walk longer"
+        }
+      }
+    ]
+  },
+  "silenceEnd": {
+    "ja": "おかえりなさい。準備ができたら、また歩きましょう。",
+    "en": "Welcome back. When you're ready, let's walk on."
+  },
+  "walkCues": {
+    "ja": [
+      "肩が上がっていないか、そっと確かめてみてください。",
+      "次の場所まで、呼吸に合わせて歩きましょう。四歩で吸って、六歩で吐く。",
+      "視線を少し上げて、木々の高さを感じながら歩きましょう。",
+      "いま聞こえている音に、ひとつだけ名前をつけてみてください。"
+    ],
+    "en": [
+      "Gently check whether your shoulders have crept up.",
+      "Walk to the next place in rhythm with your breath. In for four steps, out for six.",
+      "Lift your gaze a little and feel the height of the trees as you walk.",
+      "Give a name to just one sound you can hear right now."
+    ]
+  },
+  "closing": {
+    "ja": [
+      "今日の歩みは、ここでひと区切りです。",
+      "最後に、もう一度だけ深く息を吐いてください。",
+      "歩き始める前と比べて、何か変わったことはありますか。答えは、この後の画面で、あなたの言葉で残してください。"
+    ],
+    "en": [
+      "This is where today's walk comes to a close.",
+      "One last time, breathe out slowly and deeply.",
+      "Compared to when you started, has anything changed? On the next screen, please put it in your own words."
+    ]
+  },
+  "interactionSec": {
+    "LOOK": 20,
+    "LISTEN": 30,
+    "STOP": 20,
+    "REST": 60
+  },
+  "activityLabels": {
+    "LOOK": {
+      "ja": "遠くを見る時間",
+      "en": "Looking into the distance"
+    },
+    "LISTEN": {
+      "ja": "耳を澄ませる時間",
+      "en": "Listening"
+    },
+    "WALK": {
+      "ja": "足もとを感じて歩く時間",
+      "en": "Walking, feeling your steps"
+    },
+    "STOP": {
+      "ja": "立ち止まる時間",
+      "en": "Standing still"
+    },
+    "REST": {
+      "ja": "休む時間",
+      "en": "Resting"
+    },
+    "SILENCE": {
+      "ja": "静かに過ごす時間",
+      "en": "Quiet time"
+    }
+  },
+  "phrases": {
+    "timeBox": {
+      "ja": "{t}ほど、時間をとります。",
+      "en": "Let's take {t}."
+    },
+    "moveOn": {
+      "ja": [
+        "では、次の場所へ歩きましょう。",
+        "ありがとうございます。それでは、歩き出しましょう。",
+        "では、また歩きましょう。"
+      ],
+      "en": [
+        "Now, let's walk on to the next place.",
+        "Thank you. Let's start walking again.",
+        "Shall we walk on."
+      ]
+    },
+    "preview": {
+      "ja": "次は、{name}です。{dir}の方向に約{dist}、歩いて{min}ほどです。",
+      "en": "Next is {name}, {dist} to the {dir}, {min} on foot."
+    },
+    "dirs": {
+      "ja": [
+        "北",
+        "北東",
+        "東",
+        "南東",
+        "南",
+        "南西",
+        "西",
+        "北西"
+      ],
+      "en": [
+        "north",
+        "northeast",
+        "east",
+        "southeast",
+        "south",
+        "southwest",
+        "west",
+        "northwest"
+      ]
+    },
+    "units": {
+      "ja": {
+        "sec": "{n}秒",
+        "min": "{n}分",
+        "m": "{n}メートル",
+        "km": "{n}キロ"
+      },
+      "en": {
+        "sec": "about {n} seconds",
+        "min": "about {n} minutes",
+        "m": "about {n} meters",
+        "km": "{n} km"
+      }
+    },
+    "endLine": {
+      "ja": "この場所のお話は、ここまでです。",
+      "en": "That is all I have to share about this place."
+    }
+  }
+}

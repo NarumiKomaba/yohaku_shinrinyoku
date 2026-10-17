@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f2a22">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>デジタルネイチャー＆ウェルネスインストラクター 皇居外苑版</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <main id="app">
+
+    <!-- 1. 購入コード / 言語 -->
+    <section class="screen" id="screen-welcome">
+      <div class="lang-switch" role="group" aria-label="Language">
+        <button type="button" data-lang="ja" class="chip">日本語</button>
+        <button type="button" data-lang="en" class="chip">English</button>
+      </div>
+      <header class="brand">
+        <div class="leaf" aria-hidden="true"></div>
+        <h1><span data-i18n="brand"></span><small data-i18n="edition"></small></h1>
+        <p class="lead" data-i18n="tagline"></p>
+      </header>
+      <form id="code-form" class="stack">
+        <label for="code" data-i18n="codeLabel"></label>
+        <input id="code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" data-i18n-placeholder="codePlaceholder">
+        <p class="error" id="code-error" hidden></p>
+        <button class="btn primary" type="submit" data-i18n="begin"></button>
+        <button class="btn ghost" type="button" id="buy" data-i18n="buy"></button>
+        <button class="btn" type="button" id="demo-start" data-i18n="demoStart"></button>
+        <p class="note" data-i18n="demoNote"></p>
+        <p class="note" data-i18n="buyNote"></p>
+      </form>
+    </section>
+
+    <!-- 2. Check-in -->
+    <section class="screen" id="screen-checkin" hidden>
+      <h2 data-i18n="checkinTitle"></h2>
+      <div class="vc" id="vc" hidden>
+        <p class="vc-status" id="vc-status"></p>
+        <p class="vc-caption" id="vc-caption"></p>
+        <div class="row" id="vc-confirm" hidden>
+          <button class="btn primary" type="button" id="vc-yes" data-i18n="vcYes"></button>
+          <button class="btn ghost" type="button" id="vc-fix" data-i18n="vcFix"></button>
+        </div>
+        <button class="link" type="button" id="vc-stop" data-i18n="vcStop"></button>
+      </div>
+      <p class="q" data-i18n="checkinState"></p>
+      <div class="choices" id="choices-state"></div>
+      <p class="q" data-i18n="checkinDesire"></p>
+      <div class="choices" id="choices-desire"></div>
+      <p class="q" data-i18n="checkinDuration"></p>
+      <div class="choices" id="choices-duration"></div>
+      <div class="reflect-q">
+        <label class="q" for="checkin-note" data-i18n="checkinNote"></label>
+        <textarea id="checkin-note" rows="3" maxlength="200" data-i18n-placeholder="checkinNotePh"></textarea>
+        <button type="button" class="link dictate" data-target="checkin-note" data-i18n="dictate"></button>
+      </div>
+      <button class="btn primary" id="checkin-next" disabled data-i18n="next"></button>
+    </section>
+
+    <!-- 3. 準備 -->
+    <section class="screen" id="screen-prep" hidden>
+      <h2 data-i18n="prepTitle"></h2>
+      <ol class="prep">
+        <li data-i18n="prep1"></li>
+        <li data-i18n="prep2"></li>
+        <li data-i18n="prep3"></li>
+      </ol>
+      <fieldset>
+        <legend data-i18n="modeLabel"></legend>
+        <label class="radio"><input type="radio" name="mode" value="gps" checked> <span data-i18n="modeGps"></span></label>
+        <label class="radio"><input type="radio" name="mode" value="sim"> <span data-i18n="modeSim"></span></label>
+      </fieldset>
+      <fieldset>
+        <legend data-i18n="silenceEndLabel"></legend>
+        <label class="radio"><input type="radio" name="silenceEnd" value="auto" checked> <span data-i18n="silenceAuto"></span></label>
+        <label class="radio"><input type="radio" name="silenceEnd" value="manual"> <span data-i18n="silenceManual"></span></label>
+      </fieldset>
+      <p class="error" id="gps-error" hidden></p>
+      <button class="btn ghost" id="gps-fallback-sim" hidden data-i18n="gpsUseSim"></button>
+      <button class="btn primary" id="start-walk" data-i18n="startWalk"></button>
+    </section>
+
+    <!-- 4. ウォーク中（Eyes Up: 最小限の表示） -->
+    <section class="screen dark" id="screen-walk" hidden>
+      <div class="walk-center">
+        <p class="status" id="status-label"></p>
+        <p class="listen-cue" id="listen-cue" hidden data-i18n="listenCue"></p>
+        <p class="hint" id="status-hint"></p>
+        <p class="spot" id="spot-label"></p>
+        <p class="activity" id="activity" hidden></p>
+        <button class="btn back" id="btn-back" hidden data-i18n="back"></button>
+        <p class="caption" id="caption" hidden></p>
+        <button class="btn" id="audio-enable" hidden data-i18n="audioEnable"></button>
+        <div class="ask-panel" id="ask-panel" hidden>
+          <p class="ask-text" id="ask-text"></p>
+          <div class="ask-options" id="ask-options"></div>
+          <p class="hint" data-i18n="askHint"></p>
+        </div>
+      </div>
+      <p class="next" id="next-label"></p>
+
+      <div id="sim-panel" hidden>
+        <div id="sim-map"></div>
+        <div class="sim-controls">
+          <span class="sim-readout" id="sim-readout"></span>
+          <button class="btn small" id="sim-dwell" data-i18n="simDwell"></button>
+          <span class="note" data-i18n="simHint"></span>
+        </div>
+      </div>
+
+      <form id="type-form" class="type-form" hidden>
+        <input id="type-input" autocomplete="off" enterkeyhint="send">
+        <button class="btn small" type="submit" data-i18n="send"></button>
+      </form>
+
+      <nav class="controls">
+        <button class="ctl" id="btn-pause"><span class="ico">❚❚</span><span data-i18n="pause"></span></button>
+        <button class="ctl talk" id="btn-talk"><span class="ico">●</span><span id="talk-label" data-i18n="talk"></span></button>
+        <button class="ctl" id="btn-end"><span class="ico">■</span><span data-i18n="end"></span></button>
+      </nav>
+      <div class="sub-controls">
+        <button class="link" id="btn-type" data-i18n="typeInstead"></button>
+        <button class="link" id="btn-rate"></button>
+        <button class="link" id="btn-autolisten"></button>
+        <button class="link" id="btn-pocket" data-i18n="pocket"></button>
+      </div>
+
+      <div class="confirm" id="end-confirm" hidden>
+        <p data-i18n="endConfirm"></p>
+        <div class="row">
+          <button class="btn ghost" id="end-no" data-i18n="no"></button>
+          <button class="btn primary" id="end-yes" data-i18n="yes"></button>
+        </div>
+      </div>
+    </section>
+
+    <div class="confirm" id="pocket-intro" hidden>
+      <p data-i18n="pocketIntro"></p>
+      <div class="row">
+        <button class="btn ghost" id="pocket-cancel" data-i18n="no"></button>
+        <button class="btn primary" id="pocket-ok" data-i18n="pocketOk"></button>
+      </div>
+    </div>
+
+    <!-- ポケットモード: 誤タップ防止の黒画面 -->
+    <div id="pocket" hidden>
+      <p id="pocket-status"></p>
+      <p class="note" data-i18n="pocketHint"></p>
+    </div>
+
+    <!-- 5. Reflection / アンケート -->
+    <section class="screen" id="screen-reflect" hidden>
+      <h2 data-i18n="reflectTitle"></h2>
+      <p class="lead" data-i18n="reflectLead"></p>
+      <form id="reflect-form" class="stack">
+        <div class="reflect-q">
+          <label for="r-noticed" data-i18n="qNoticed"></label>
+          <textarea id="r-noticed" rows="2"></textarea>
+          <button type="button" class="link dictate" data-target="r-noticed" data-i18n="dictate"></button>
+        </div>
+        <div class="reflect-q">
+          <label for="r-changed" data-i18n="qChanged"></label>
+          <textarea id="r-changed" rows="2"></textarea>
+          <button type="button" class="link dictate" data-target="r-changed" data-i18n="dictate"></button>
+        </div>
+        <div class="reflect-q">
+          <label for="r-next" data-i18n="qNext"></label>
+          <textarea id="r-next" rows="2"></textarea>
+          <button type="button" class="link dictate" data-target="r-next" data-i18n="dictate"></button>
+        </div>
+
+        <h3 data-i18n="surveyTitle"></h3>
+        <p class="q" data-i18n="sSatisfaction"></p>
+        <div class="choices scale" id="s-satisfaction"></div>
+        <p class="q" data-i18n="sPrice"></p>
+        <div class="choices" id="s-price"></div>
+        <p class="q" data-i18n="sScreen"></p>
+        <div class="choices" id="s-screen"></div>
+        <label class="q" for="s-recommend" data-i18n="sRecommend"></label>
+        <input type="range" id="s-recommend" min="0" max="10" value="7"><output id="s-recommend-out">7</output>
+        <p class="q" data-i18n="sNext"></p>
+        <div class="choices" id="s-next"></div>
+        <p class="q" data-i18n="sHeart"></p>
+        <div class="row">
+          <input type="number" id="hr-before" inputmode="numeric" min="30" max="220" placeholder="bpm">
+          <input type="number" id="hr-after" inputmode="numeric" min="30" max="220" placeholder="bpm">
+        </div>
+        <button class="btn primary" type="submit" data-i18n="submit"></button>
+      </form>
+    </section>
+
+    <!-- 6. 終了 -->
+    <section class="screen" id="screen-thanks" hidden>
+      <div class="leaf" aria-hidden="true"></div>
+      <h2 data-i18n="thanksTitle"></h2>
+      <p class="lead" data-i18n="thanksLead"></p>
+      <dl class="summary" id="summary"></dl>
+      <button class="btn ghost" id="restart" data-i18n="restart"></button>
+    </section>
+  </main>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
