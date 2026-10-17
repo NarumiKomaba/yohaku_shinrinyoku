@@ -279,6 +279,16 @@ async function startVoiceCheckin() {
 $('#vc-yes').addEventListener('click', () => vc?.onButton?.('yes'));
 $('#vc-fix').addEventListener('click', () => vc?.onButton?.('fix'));
 $('#vc-stop').addEventListener('click', () => { vc?.cancel(); $('#vc').hidden = true; });
+// 手で選ぶ・書くを始めたら声のチェックインは止める（声の結果で上書きしない・「声で入力」とマイクを取り合わない）
+function stopVoiceCheckin() {
+  if (!vc) return;
+  vc.cancel();
+  vc = null;
+  $('#vc').hidden = true;
+}
+// capture で先に止める（「声で入力」の聞き取りを始めた後に止めると、その聞き取りまで止まるため）
+$('#screen-checkin').addEventListener('click', (e) => { if (e.target.closest('.chip, .dictate')) stopVoiceCheckin(); }, true);
+$('#checkin-note').addEventListener('focus', stopVoiceCheckin);
 
 function finishCheckin(via) {
   vc?.cancel();
