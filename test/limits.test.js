@@ -58,13 +58,14 @@ test('ipBucket_groupsIpv6By64_andKeepsIpv4', () => {
   assert.equal(ipBucket('2001:db8::'), '2001:db8:0:0::/64');
 });
 
-test('failureLimiter_globalCap_blocksEveryoneAfterManyFailures', () => {
+test('failureLimiter_globalCap_blocksFailedSourcesUntilWindowEnds', () => {
   let t = 0;
   const lim = createFailureLimiter({ max: 100, globalMax: 3, windowMs: 1000, now: () => t });
   for (const k of ['a', 'b', 'c']) lim.fail(k);
-  assert.throws(() => lim.check('d'), (e) => e.status === 429, '全体の上限で、別の接続元も止まる');
+  assert.throws(() => lim.check('c'), (e) => e.status === 429, '全体の上限を超えたら、失敗した接続元は止まる');
+  lim.check('d'); // 失敗していない接続元は通る
   t = 1001;
-  lim.check('d');
+  lim.check('c');
 });
 
 test('windowCounter_limitsPerWindow_andZeroMeansUnlimited', () => {
@@ -78,4 +79,19 @@ test('windowCounter_limitsPerWindow_andZeroMeansUnlimited', () => {
   assert.equal(c.take('s'), true);
   const free = createWindowCounter({ max: 0 });
   for (let i = 0; i < 100; i++) assert.equal(free.take('s'), true);
+});
+
+test('dailyCounter_peek_doesNotConsume', () => {
+  const c = createDailyCounter({ max: 1, now: () => 0 });
+  assert.equal(c.peek('x'), true);
+  assert.equal(c.peek('x'), true);
+  assert.equal(c.take('x'), true);
+  assert.equal(c.peek('x'), false);
+});
+
+test('failureLimiter_globalCap_onlyBlocksSourcesThatFailed', () => {
+  const lim = createFailureLimiter({ max: 10, globalMax: 3, windowMs: 1000, now: () => 0 });
+  ['a', 'b', 'c'].forEach((k) => lim.fail(k));
+  assert.throws(() => lim.check('a'), (e) => e.status === 429, '失敗したことのある接続元は止める');
+  lim.check('fresh'); // 失敗していない人は通す
 });

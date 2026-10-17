@@ -20,3 +20,12 @@ test('callGemini_withNewerFlashModel_disablesThinkingAndUsesThatModel', async ()
   assert.deepEqual(stub.bodies[0].generationConfig.thinkingConfig, { thinkingBudget: 0 });
   assert.match(urls[0], /models\/gemini-3\.8-flash:generateContent/);
 });
+
+test('thinkingModelPattern_skipsOlderFlashWithoutThinking', () => {
+  const pattern = /(2\.5|[3-9]\.\d+)-flash|flash(-lite)?-latest/i;
+  assert.ok(pattern.test('gemini-2.5-flash'));
+  assert.ok(pattern.test('gemini-3.8-flash'));
+  assert.ok(pattern.test('gemini-flash-latest'));
+  assert.ok(!pattern.test('gemini-2.0-flash'));
+  assert.ok(!pattern.test('gemini-1.5-flash'));
+});

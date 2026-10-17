@@ -27,6 +27,8 @@ const CLIENT_EVENT_TYPES = new Set([
   'speech_rate', 'guide_ask', 'guide_ask_reply', 'reflection', 'survey', 'session_complete', 'error',
 ]);
 const MAX_EVENTS_PER_SESSION = 300;
+const FINAL_EVENT_TYPES = new Set(['survey', 'session_complete']);
+const finalSeen = new Set(); // `${sessionId}:${type}`
 const MAX_EVENT_KEYS = 30;
 const eventCounts = new Map(); // sessionId -> 受け付けた件数
 
@@ -138,8 +140,11 @@ module.exports = {
       console.warn('[auth] invalid code from', ip);
       throw httpError(403, 'invalid_code');
     }
-    if (isDemo && !sessionsPerCode.take(c)) throw httpError(429, 'code_daily_limit');
-    if (!sessionsPerIp.take(ip)) throw httpError(429, 'ip_daily_limit');
+    // 両方の上限を確かめてから数える（IP の上限で断ったときに、共通のデモコードの枠を減らさない）
+    if (!sessionsPerIp.peek(ip)) throw httpError(429, 'ip_daily_limit');
+    if (isDemo && !sessionsPerCode.peek(c)) throw httpError(429, 'code_daily_limit');
+    sessionsPerIp.take(ip);
+    if (isDemo) sessionsPerCode.take(c);
     if (p[c] && !p[c].usedAt) { p[c].usedAt = now(); writeLog('purchases.json', p); }
     const { token, sessionId } = createSession(c);
     if (isDemo) appendEvents([{ type: 'purchase', ts: now(), demoCode: true, sessionId }]);
@@ -152,10 +157,14 @@ module.exports = {
     const used = eventCounts.get(s.sessionId) || 0;
     const room = Math.max(0, Math.min(200, MAX_EVENTS_PER_SESSION - used));
     const ts = now();
-    const accepted = (Array.isArray(events) ? events : []).slice(0, room).map(cleanEvent).filter(Boolean)
-      .map((e) => ({ ...e, sessionId: s.sessionId, ts }));
+    const cleaned = (Array.isArray(events) ? events : []).slice(0, 200).map(cleanEvent).filter(Boolean);
+    // 最後のアンケートと完了は、件数の上限に達していても受け付ける（1 回の体験で各 1 件まで）
+    const counted = cleaned.filter((e) => !FINAL_EVENT_TYPES.has(e.type)).slice(0, room);
+    const finals = cleaned.filter((e) => FINAL_EVENT_TYPES.has(e.type) && !finalSeen.has(`${s.sessionId}:${e.type}`));
+    finals.forEach((e) => { capSize(finalSeen); finalSeen.add(`${s.sessionId}:${e.type}`); });
+    const accepted = [...counted, ...finals].map((e) => ({ ...e, sessionId: s.sessionId, ts }));
     if (!eventCounts.has(s.sessionId)) capSize(eventCounts);
-    eventCounts.set(s.sessionId, used + accepted.length);
+    eventCounts.set(s.sessionId, used + counted.length);
     return { ok: true, accepted: appendEvents(accepted) };
   },
 

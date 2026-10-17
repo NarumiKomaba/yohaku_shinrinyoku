@@ -89,7 +89,10 @@ function applyAccess() {
 }
 
 // コードが通らなかったときの文言（総当たり対策で止められたときは別の文言）
-const codeErrorText = (err) => (err && err.status === 429 ? S().tooManyAttempts : S().invalidCode);
+const codeErrorText = (err) => {
+  if (!err || err.status !== 429) return S().invalidCode;
+  return err.message === 'too_many_attempts' ? S().tooManyAttempts : S().dailyLimit;
+};
 
 function chipGroup(container, options, { multi = false, onChange }) {
   container.replaceChildren(...options.map(({ value, label }) => {
