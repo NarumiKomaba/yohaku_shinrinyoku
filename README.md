@@ -44,19 +44,23 @@ Gemini API キーは Windows のユーザー環境変数から自動的に読み
 | 変数 | 既定値 | 説明 |
 |---|---|---|
 | `GEMINI_API_KEY` | — | Gemini API キー。Windows ユーザー環境変数に設定（プロセス環境変数で上書き可） |
-| `NODE_ENV` | — | `production` にすると公開用の設定を確かめ、足りなければ起動しない（下の「公開するとき」） |
+| `NODE_ENV` | — | `production` にすると公開用の設定を確かめ、足りなければ起動しない（Cloud Run の `K_SERVICE` があるときも同じ扱い。docs/OPERATIONS.md） |
 | `GUIDE_PASSCODE` | `GAIEN-GUIDE` | ガイドさんページと集計ページのログイン合言葉。起動ログには値を出さない（既定値のときだけ表示） |
 | `DEMO_CODES` | `DEMO2027` | デモ用購入コード（複数指定時はカンマ区切り）。初期値以外にすると、画面にコードを表示せず「デモで試す」も入力したコードを使う |
-| `PURCHASE_ENABLED` | ローカル `1`／公開 `0` | 購入（モック）を受け付けるか。`0` で止めて購入ボタンを隠す。`NODE_ENV=production` のときは既定で止まり、`1` で有効 |
+| `PURCHASE_ENABLED` | ローカル `1`／公開 `0` | 購入（モック）を受け付けるか。`0` で止めて購入ボタンを隠す。公開では使えない（`1` にすると起動しない） |
 | `LLM_DAILY_MAX` | `0`（無制限） | サーバー全体の 1 日（日本時間）の Gemini 呼び出し上限。体験者向けの呼び出し（質問・案内・チェックイン）だけを数え、ガイドさんの録音・抽出は数えない。超えたら素材と Knowledge だけの案内に切り替わる。`callGemini` を呼んだ回数で数える（失敗した呼び出しも 1 回）。メモリで数えるので再起動で 0 に戻る |
-| `SESSIONS_PER_CODE_DAILY` | `0`（無制限） | 1 つのデモコードで 1 日（日本時間）に始められる体験の数 |
-| `TRUSTED_PROXY_HOPS` | `0` | `X-Forwarded-For` を足す信頼できるプロキシの段数（Cloud Run は `1`）。総当たり対策で接続元 IP を見分けるのに使う |
-| `NARRATE_MAX_PER_SESSION` | `0`（無制限） | 1 回の体験での案内（narrate）の Gemini 呼び出し上限 |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | 使用する Gemini モデル |
+| `SESSIONS_PER_CODE_DAILY` | `0`（無制限） | 1 つのデモコードで 1 日（日本時間）に始められる体験の数。公開では必須 |
+| `SESSIONS_PER_IP_DAILY` | ローカル `0`／公開 `20` | 1 つの接続元（IPv4 はアドレス、IPv6 は /64）で 1 日に始められる体験の数 |
+| `WALK_CALLS_PER_MIN` / `WALK_CALLS_PER_DAY` | ローカル `0`／公開 `30`・`300` | 1 回の体験で、体験中の API（質問・案内・チェックイン）を呼べる回数。超えたら 429 |
+| `EVENTS_DAILY_BYTES` | ローカル `0`／公開 `20000000` | 利用ログ（events.jsonl）に 1 日に書き込む量の上限（バイト）。超えた分は捨てる |
+| `TRUSTED_PROXY_HOPS` | `0` | `X-Forwarded-For` を足す信頼できるプロキシの段数（Cloud Run 直結は `1`、前にロードバランサーを置くなら `2`）。総当たり対策で接続元 IP を見分けるのに使う。公開では必須 |
+| `NARRATE_MAX_PER_SESSION` | `0`（無制限） | 1 回の体験での案内（narrate）の Gemini 呼び出し上限。超えたら素材だけの案内。公開では必須 |
+| `ASK_MAX_PER_SESSION` | `0`（無制限） | 1 回の体験での自由質問（ask）の Gemini 呼び出し上限。超えたら素材と Knowledge だけで答える。公開では必須 |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | 使用する Gemini モデル。新しく作った GCP プロジェクトでは `gemini-2.5-flash` が使えないので、`gemini-3.8-flash` などを指定する（Flash 系は考える時間を 0 にして送る） |
 | `PORT` | `3000` | リッスンポート |
 | `HOST` | `127.0.0.1` | バインドアドレス（`0.0.0.0` でLAN公開） |
 | `GEMINI_PRICE_IN_PER_M` | `0.3` | 入力トークン 1M あたりの USD |
-| `GEMINI_PRICE_OUT_PER_M` | `2.5` | 出力トークン 1M あたりの USD |
+| `GEMINI_PRICE_OUT_PER_M` | `2.5` | 出力トークン 1M あたりの USD。`gemini-3.8-flash` なら入力 `0.75`・出力 `3.75` を設定する |
 | `USD_JPY` | `150` | USD から JPY への換算レート |
 | `LOG_QUESTION_TEXT` | `0` | `1` に設定するとログに質問テキストを記録（デフォルト非記録） |
 | `DATA_DIR` | `./data` | データ保存ディレクトリ |

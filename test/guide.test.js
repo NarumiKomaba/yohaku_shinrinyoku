@@ -155,6 +155,34 @@ test('putSpots_all_requiresGuideAndValidArray', async () => {
   assert.equal((await call('PUT', '/api/spots', { spots: 'x' })).status, 400);
   assert.equal((await call('PUT', '/api/spots', { spots: [{ id: 'a' }] })).status, 400);
   assert.equal((await call('PUT', '/api/spots', { spots: [{ ...GOOD, id: 'BAD ID' }] })).status, 400, 'id も PUT /api/guide/spots/:id と同じ検査');
+  assert.equal((await call('PUT', '/api/spots', { spots: [null] })).status, 400, 'null は 500 ではなく 400');
+  assert.equal((await call('PUT', '/api/spots', { spots: [[1]] })).status, 400);
+  assert.equal((await call('PUT', '/api/spots', { spots: [{ ...GOOD, id: 'dup' }, { ...GOOD, id: 'dup' }] })).status, 400, '同じ id は拒否');
+});
+
+test('putSpots_all_storesNumericIdAsString', async () => {
+  const before = JSON.parse(fs.readFileSync(path.join(dir, 'spots.json'), 'utf8'));
+  try {
+    assert.equal((await call('PUT', '/api/spots', { spots: [{ ...GOOD, id: 42 }] })).status, 200);
+    assert.equal(readSpots()[0].id, '42');
+  } finally {
+    fs.writeFileSync(path.join(dir, 'spots.json'), JSON.stringify(before));
+  }
+});
+
+test('writeData_keepsOnlyRecentBackups', async () => {
+  const { MAX_BACKUPS } = require('../lib/store');
+  const before = JSON.parse(fs.readFileSync(path.join(dir, 'spots.json'), 'utf8'));
+  try {
+    for (let i = 0; i < MAX_BACKUPS + 5; i++) {
+      assert.equal((await call('PUT', '/api/spots', { spots: [{ ...GOOD, id: `b-${i}` }] })).status, 200);
+      await new Promise((r) => setTimeout(r, 2)); // バックアップ名のミリ秒をずらす
+    }
+    const backups = fs.readdirSync(path.join(dir, 'logs')).filter((f) => f.startsWith('spots.backup-'));
+    assert.equal(backups.length, MAX_BACKUPS);
+  } finally {
+    fs.writeFileSync(path.join(dir, 'spots.json'), JSON.stringify(before));
+  }
 });
 
 test('putSpots_all_normalizesEachSpotLikeSingleSave', async () => {

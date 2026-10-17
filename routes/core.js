@@ -2,28 +2,31 @@
 'use strict';
 
 const crypto = require('crypto');
-const { MODEL, API_KEY, DEMO_CODES, DEMO_PUBLIC, DEFAULT_DEMO_CODE, PURCHASE_ENABLED, SESSIONS_PER_CODE_DAILY, TRUSTED_PROXY_HOPS } = require('../lib/config');
+const { MODEL, API_KEY, DEMO_CODES, DEMO_PUBLIC, DEFAULT_DEMO_CODE, PURCHASE_ENABLED, SESSIONS_PER_CODE_DAILY, SESSIONS_PER_IP_DAILY, TRUSTED_PROXY_HOPS } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
 const { readData, readLog, writeLog, appendEvents, readEvents } = require('../lib/store');
 const { createSession, requireSession, requireGuide, guideLogin } = require('../lib/auth');
-const { clientIp, capSize, createFailureLimiter, createDailyCounter } = require('../lib/limits');
+const { clientIp, ipBucket, capSize, createFailureLimiter, createDailyCounter } = require('../lib/limits');
 
 const DATA_FILES = { spots: 'spots.json', scenario: 'scenario.json', knowledge: 'knowledge.json' };
 const now = () => new Date().toISOString();
 const SMALL_BODY_LIMIT = 16_000;
 const EVENTS_BODY_LIMIT = 64_000;
 
-// コードと合言葉の総当たり対策（IP ごとに 10 分で 10 回失敗したら 429）。入力された値はログに出さない
+// コードと合言葉の総当たり対策（接続元ごとに 10 分で 10 回、全体で 200 回失敗したら 429）。入力された値はログに出さない
 const sessionFails = createFailureLimiter();
 const guideFails = createFailureLimiter();
 const sessionsPerCode = createDailyCounter({ max: SESSIONS_PER_CODE_DAILY });
+const sessionsPerIp = createDailyCounter({ max: SESSIONS_PER_IP_DAILY });
+// 接続元（IPv4 はアドレス、IPv6 は /64）
+const sourceOf = (req) => ipBucket(clientIp(req, TRUSTED_PROXY_HOPS));
 
 // /api/events で受け付ける種類（体験アプリが送るものだけ）。llm_usage・purchase などはサーバーだけが書く
 const CLIENT_EVENT_TYPES = new Set([
   'session_start', 'checkin', 'spot_reached', 'interaction', 'silence_end', 'question_asked', 'stt_used', 'tts',
   'speech_rate', 'guide_ask', 'guide_ask_reply', 'reflection', 'survey', 'session_complete', 'error',
 ]);
-const MAX_EVENTS_PER_SESSION = 2000;
+const MAX_EVENTS_PER_SESSION = 300;
 const MAX_EVENT_KEYS = 30;
 const eventCounts = new Map(); // sessionId -> 受け付けた件数
 
@@ -122,9 +125,10 @@ module.exports = {
   },
 
   'POST /api/session': async (req) => {
-    const ip = clientIp(req, TRUSTED_PROXY_HOPS);
-    sessionFails.check(ip);
+    const ip = sourceOf(req);
     const { code } = await readBody(req, SMALL_BODY_LIMIT);
+    // body を読み終えてから確かめる（check から fail まで await を挟まないので、同時に送られても上限を超えない）
+    sessionFails.check(ip);
     const c = String(code || '').trim().toUpperCase();
     // 購入を止めているときは、過去に発行した購入コードも受け付けない
     const p = PURCHASE_ENABLED ? readLog('purchases.json', {}) : {};
@@ -135,6 +139,7 @@ module.exports = {
       throw httpError(403, 'invalid_code');
     }
     if (isDemo && !sessionsPerCode.take(c)) throw httpError(429, 'code_daily_limit');
+    if (!sessionsPerIp.take(ip)) throw httpError(429, 'ip_daily_limit');
     if (p[c] && !p[c].usedAt) { p[c].usedAt = now(); writeLog('purchases.json', p); }
     const { token, sessionId } = createSession(c);
     if (isDemo) appendEvents([{ type: 'purchase', ts: now(), demoCode: true, sessionId }]);
@@ -151,14 +156,13 @@ module.exports = {
       .map((e) => ({ ...e, sessionId: s.sessionId, ts }));
     if (!eventCounts.has(s.sessionId)) capSize(eventCounts);
     eventCounts.set(s.sessionId, used + accepted.length);
-    appendEvents(accepted);
-    return { ok: true, accepted: accepted.length };
+    return { ok: true, accepted: appendEvents(accepted) };
   },
 
   'POST /api/guide/login': async (req) => {
-    const ip = clientIp(req, TRUSTED_PROXY_HOPS);
-    guideFails.check(ip);
+    const ip = sourceOf(req);
     const { passcode } = await readBody(req, SMALL_BODY_LIMIT);
+    guideFails.check(ip); // body の後（上と同じ理由）
     try {
       return { token: guideLogin(passcode) };
     } catch (e) {

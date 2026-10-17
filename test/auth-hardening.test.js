@@ -89,8 +89,8 @@ test('events_overSessionCap_areNotAccepted', async () => {
   const headers = sessionHeaders();
   const batch = Array.from({ length: 200 }, () => ({ type: 'tts', chars: 1 }));
   let total = 0;
-  for (let i = 0; i < 11; i++) total += (await h.api(srv.base, 'POST', '/api/events', { headers, body: { events: batch } })).json.accepted;
-  assert.equal(total, 2000, '1 セッションで受け付けるのは 2000 件まで');
+  for (let i = 0; i < 3; i++) total += (await h.api(srv.base, 'POST', '/api/events', { headers, body: { events: batch } })).json.accepted;
+  assert.equal(total, 300, '1 セッションで受け付けるのは 300 件まで');
 });
 
 test('events_withHugeBody_isRejected', async () => {
@@ -126,4 +126,21 @@ test('guideLogin_afterTenFailures_returns429EvenForCorrectPasscode', async () =>
   for (let i = 0; i < 10; i++) assert.equal((await login(`WRONG-${i}`)).status, 403);
   const r = await login('TEST-PASS');
   assert.equal(r.status, 429);
+});
+
+test('csp_allowsOnlyTheLeafletPathOnUnpkg', async () => {
+  const csp = (await h.realFetch(srv.base + '/')).headers.get('content-security-policy');
+  assert.match(csp, /script-src 'self' https:\/\/unpkg\.com\/leaflet@1\.9\.4\//);
+  assert.doesNotMatch(csp, /https:\/\/unpkg\.com(?!\/leaflet@1\.9\.4\/)/, 'unpkg 全体は許さない');
+});
+
+test('leafletTags_haveSubresourceIntegrity', () => {
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', 'public', f), 'utf8');
+  for (const tag of read('guide.html').match(/<(?:link|script)[^>]*unpkg\.com[^>]*>/g)) {
+    assert.match(tag, /integrity="sha256-[A-Za-z0-9+/=]+"/, tag);
+    assert.match(tag, /crossorigin="anonymous"/, tag);
+  }
+  const sim = read('js/sim.js');
+  assert.match(sim, /css\.integrity = LEAFLET_SRI\.css/);
+  assert.match(sim, /js\.integrity = LEAFLET_SRI\.js/);
 });

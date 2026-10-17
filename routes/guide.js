@@ -85,8 +85,13 @@ function normalizeSpot(sp, id) {
 
 function validateSpots(spots) {
   if (!Array.isArray(spots)) throw httpError(400, 'spots must be an array');
+  const ids = new Set();
   for (const sp of spots) {
-    if (!sp.id || !Number.isFinite(sp.lat) || !Number.isFinite(sp.lng) || !sp.name) throw httpError(400, `invalid spot: ${sp.id || '(no id)'}`);
+    if (!sp || typeof sp !== 'object' || Array.isArray(sp)) throw httpError(400, 'invalid spot');
+    if (!sp.id || !Number.isFinite(sp.lat) || !Number.isFinite(sp.lng) || !sp.name) throw httpError(400, 'invalid spot');
+    const id = String(sp.id);
+    if (ids.has(id)) throw httpError(400, 'duplicate id');
+    ids.add(id);
   }
 }
 
@@ -324,7 +329,11 @@ module.exports = {
     const body = await readBody(req);
     validateSpots(body.spots);
     // 1 件ずつ PUT /api/guide/spots/:id と同じ検査・整形を通す（体験者の画面や LLM のプロンプトに入るため）
-    const spots = body.spots.map((sp) => { checkSpotId(String(sp.id)); return normalizeSpot(sp, sp.id); });
+    const spots = body.spots.map((sp) => {
+      const id = String(sp.id);
+      checkSpotId(id);
+      return normalizeSpot({ ...sp, id }, id);
+    });
     const current = readData('spots.json');
     writeData('spots.json', { ...current, spots });
     return { ok: true, count: spots.length };

@@ -63,30 +63,36 @@
 
 ### 使いすぎを防ぐ設定（お試し版・公開時）
 
-`NODE_ENV=production`（Dockerfile で設定済み）で起動すると、次の設定が足りないときは起動しません。
-- `GUIDE_PASSCODE` が 16 文字以上で設定されている
+`NODE_ENV=production`（Dockerfile で設定済み）か Cloud Run（`K_SERVICE` が自動で付く）で起動すると、次の設定が足りないときは起動しません。
+- `GUIDE_PASSCODE` が（前後の空白を除いて）16 文字以上
 - `DEMO_CODES` が設定されていて、`DEMO2027` を含まず、どのコードも 8 文字以上
-- 購入（モック）は既定で止まる（`PURCHASE_ENABLED=1` のときだけ有効）
+- `LLM_DAILY_MAX`・`NARRATE_MAX_PER_SESSION`・`ASK_MAX_PER_SESSION`・`SESSIONS_PER_CODE_DAILY` が 1 以上
+- `TRUSTED_PROXY_HOPS` が 1 以上（Cloud Run 直結は 1。前にロードバランサーを置くなら 2）
+- `PURCHASE_ENABLED=1` ではない（購入のモックは誰でもコードを発行でき、上限も効かないため、公開では使えない）
+
+公開では、次の上限が既定で入ります（環境変数で変えられます）: 1 つの接続元で 1 日 20 体験（`SESSIONS_PER_IP_DAILY`）、1 回の体験で体験中の API を 1 分 30 回・1 日 300 回（`WALK_CALLS_PER_MIN`・`WALK_CALLS_PER_DAY`）、利用ログは 1 日 20MB まで（`EVENTS_DAILY_BYTES`）。
 
 | 変数 | おすすめ | 効果 |
 |---|---|---|
 | `DEMO_CODES=<配る用のコード>` | 公開時は必須 | 初期値の `DEMO2027` を無効にし、画面にもコードを出さない |
 | `GUIDE_PASSCODE=<16 文字以上のランダム値>` | 公開時は必須 | ガイドさんページ・集計ページの合言葉 |
 | `LLM_DAILY_MAX` | 200 程度 | サーバー全体の 1 日の Gemini 呼び出し上限（体験者向けだけ）。超えると Gemini なしの案内になる |
-| `NARRATE_MAX_PER_SESSION` | 40 程度 | 1 回の体験での案内の上限 |
-| `SESSIONS_PER_CODE_DAILY` | 必要なら | 1 つのデモコードで 1 日に始められる体験の数 |
-| `TRUSTED_PROXY_HOPS=1` | Cloud Run では必須 | 総当たり対策で、接続元 IP を正しく見分ける |
+| `NARRATE_MAX_PER_SESSION` | 40 程度（必須） | 1 回の体験での案内の上限 |
+| `ASK_MAX_PER_SESSION` | 20 程度（必須） | 1 回の体験での自由質問の上限 |
+| `SESSIONS_PER_CODE_DAILY` | 30 程度（必須） | 1 つのデモコードで 1 日に始められる体験の数 |
+| `TRUSTED_PROXY_HOPS=1` | 必須（ロードバランサーを前に置くなら 2） | 総当たり対策で、接続元 IP を正しく見分ける。0 のままだと全員が同じ接続元として数えられ、1 人の失敗で全員がログインできなくなる |
+| `GEMINI_MODEL=gemini-3.8-flash` | 新しいプロジェクトでは必須 | `gemini-2.5-flash` は新しいプロジェクトでは使えない。料金は `GEMINI_PRICE_IN_PER_M=0.75`・`GEMINI_PRICE_OUT_PER_M=3.75` |
 
 `LLM_DAILY_MAX` はメモリで数えるため、再起動や複数インスタンスでは正確な上限になりません。確実な上限は、GCP の Generative Language API のクォータ（1 日のリクエスト数）で設定してください（Vertex AI Express のキー `AQ.` を使う場合は、Vertex AI 側のクォータ）。
 
 ### アプリ側の守り（公開時）
 
-- **総当たり対策**: `/api/session`（コード）と `/api/guide/login`（合言葉）は、同じ IP から 10 分で 10 回失敗すると 429 を返す。失敗はログに `[auth] invalid ...` と IP だけを残す（入力された値は残さない）
+- **総当たり対策**: `/api/session`（コード）と `/api/guide/login`（合言葉）は、同じ接続元（IPv4 はアドレス、IPv6 は /64）から 10 分で 10 回、または全体で 200 回失敗すると 429 を返す。同時に送っても上限を超えない。失敗はログに `[auth] invalid ...` と IP だけを残す（入力された値は残さない）
 - **期限**: 体験者のセッションは 24 時間、ガイドさんのログインは 8 時間で切れる
-- **イベント**: `/api/events` は体験アプリが送る種類だけを受け付け、文字列は 200 字まで、1 セッション 2,000 件まで。`llm_usage`・`purchase` はサーバーだけが書く
+- **イベント**: `/api/events` は体験アプリが送る種類だけを受け付け、文字列は 200 字まで、1 セッション 300 件まで。`llm_usage`・`purchase` はサーバーだけが書く
 - **入力の大きさ**: 体験中の API とイベントは 64KB まで。チェックインなど LLM に渡す項目は切り詰める
 - **エラー**: 想定外のエラーは `internal_error` とだけ返し、詳しい内容はサーバーのログにだけ出す
-- **ヘッダー**: CSP（外部は Leaflet の unpkg・国土地理院の地図タイル・Overpass API だけ許可）、`X-Frame-Options: DENY`、`nosniff` など
+- **ヘッダー**: CSP（外部は unpkg の Leaflet 1.9.4 のパスだけ（SRI でハッシュも確認）・国土地理院の地図タイル・Overpass API だけ許可）、`X-Frame-Options: DENY`、`nosniff` など
 
 ### Cloud Run で動かすとき
 
@@ -271,3 +277,4 @@ npm start
 
 **最終更新**: 2026-10-04  
 **バージョン**: Phase 1 Prototype
+- **データ**: Cloud Run のファイルはメモリ上にあり、インスタンスが止まると消える。最大インスタンス数は 1 にする（ログイン状態と上限の数え方がメモリにあるため）。バックアップは 1 ファイルにつき新しい 20 個まで
