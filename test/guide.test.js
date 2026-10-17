@@ -154,6 +154,23 @@ test('putSpots_all_requiresGuideAndValidArray', async () => {
   assert.equal((await call('PUT', '/api/spots', { spots: [] }, {})).status, 401);
   assert.equal((await call('PUT', '/api/spots', { spots: 'x' })).status, 400);
   assert.equal((await call('PUT', '/api/spots', { spots: [{ id: 'a' }] })).status, 400);
+  assert.equal((await call('PUT', '/api/spots', { spots: [{ ...GOOD, id: 'BAD ID' }] })).status, 400, 'id も PUT /api/guide/spots/:id と同じ検査');
+});
+
+test('putSpots_all_normalizesEachSpotLikeSingleSave', async () => {
+  const before = JSON.parse(fs.readFileSync(path.join(dir, 'spots.json'), 'utf8'));
+  try {
+    const big = 'あ'.repeat(5000);
+    const r = await call('PUT', '/api/spots', { spots: [{ ...GOOD, id: 'bulk-1', junk: { deep: big }, name: { ja: big }, materials: [{ type: 'fact', text: big }] }] });
+    assert.equal(r.status, 200);
+    const sp = readSpots().find((s) => s.id === 'bulk-1');
+    assert.ok(sp);
+    assert.ok(!('junk' in sp), '知らない項目は保存しない');
+    assert.ok(sp.name.ja.length <= 100, '名前は切り詰める');
+    assert.ok(sp.materials[0].text.length < big.length, '素材も切り詰める');
+  } finally {
+    fs.writeFileSync(path.join(dir, 'spots.json'), JSON.stringify(before));
+  }
 });
 
 // ---------- extract ----------
@@ -262,10 +279,11 @@ test('transcribe_withMimeParams_isNormalizedAndSentToLlm', async () => {
   assert.equal(part.data, AUDIO);
 });
 
-test('transcribe_whenLlmFails_returns502', async () => {
-  h.stubGemini(() => new Error('down'));
+test('transcribe_whenLlmFails_returns502WithoutUpstreamDetail', async () => {
+  h.stubGemini(() => new Error('down: generativelanguage 403 secret detail'));
   const r = await call('POST', '/api/guide/transcribe', { audioBase64: AUDIO, mimeType: 'audio/webm' });
   assert.equal(r.status, 502);
+  assert.equal(r.json.error, 'transcribe_failed', '上流のエラー文は返さない');
 });
 
 // ---------- detectPlaces ----------
@@ -421,7 +439,7 @@ test('chunk_whenTranscriptionFails_recordsErrorButKeepsTrack', async () => {
   const r = await call('POST', `/api/guide/recordings/${rid}/chunk`, { startedAt: isoAt(T0), index: 0, audioBase64: AUDIO, mimeType: 'audio/webm', track: stayTrack(0, 10) });
   assert.equal(r.status, 200);
   assert.equal(r.json.ok, false);
-  assert.ok(r.json.error);
+  assert.equal(r.json.error, 'transcribe_failed', '上流のエラー文は返さない');
   assert.equal(JSON.parse(fs.readFileSync(recFile(rid), 'utf8')).track.length, 3);
   const g = await call('GET', `/api/guide/recordings/${rid}`);
   assert.ok(g.json.chunks[0].error);

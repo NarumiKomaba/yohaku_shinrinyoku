@@ -42,7 +42,8 @@ $('#login-form').addEventListener('submit', async (e) => {
     $('#passcode').value = '';
     await boot();
   } catch (err) {
-    $('#login-error').textContent = err.message === 'invalid_passcode' ? '合言葉が違います' : `ログインできません: ${err.message}`;
+    $('#login-error').textContent = err.message === 'invalid_passcode' ? '合言葉が違います'
+      : err.status === 429 ? '試行回数が多すぎます。しばらくしてからもう一度お試しください' : `ログインできません: ${err.message}`;
   }
 });
 

@@ -4,7 +4,13 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./_helper');
 
-h.setupEnv({ extraEnv: { PURCHASE_ENABLED: '0', DEMO_CODES: 'yk-test1, YK-TEST2' } });
+const fs = require('fs');
+const path = require('path');
+
+const dir = h.setupEnv({ extraEnv: { PURCHASE_ENABLED: '0', DEMO_CODES: 'yk-test1, ,YK-TEST2,' } });
+// 購入を止める前に発行されていた購入コード
+fs.mkdirSync(path.join(dir, 'logs'), { recursive: true });
+fs.writeFileSync(path.join(dir, 'logs', 'purchases.json'), JSON.stringify({ 'KG-OLD001': { code: 'KG-OLD001', usedAt: null } }));
 let srv;
 before(async () => { srv = await h.startServer(); });
 after(async () => { await srv.close(); });
@@ -14,6 +20,12 @@ test('config_whenLocked_reportsPurchaseDisabledAndDemoPrivate', async () => {
   assert.equal(r.status, 200);
   assert.equal(r.json.purchaseEnabled, false);
   assert.equal(r.json.demoPublic, false);
+  assert.ok(!('demoCode' in r.json), '非公開のデモコードは返さない');
+});
+
+test('session_withPreviouslyPurchasedCode_returns403WhenPurchaseDisabled', async () => {
+  const r = await h.api(srv.base, 'POST', '/api/session', { body: { code: 'KG-OLD001' } });
+  assert.equal(r.status, 403);
 });
 
 test('purchase_whenDisabled_returns403', async () => {
@@ -35,7 +47,7 @@ for (const code of ['YK-TEST1', ' yk-test2 ']) {
   });
 }
 
-test('session_withEmptyCode_returns403EvenWithCommaSeparatedCodes', async () => {
+test('session_withEmptyCode_returns403EvenWithEmptyEntriesInCodes', async () => {
   const r = await h.api(srv.base, 'POST', '/api/session', { body: { code: '' } });
   assert.equal(r.status, 403);
 });

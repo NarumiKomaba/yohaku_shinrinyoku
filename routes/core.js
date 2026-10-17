@@ -2,13 +2,44 @@
 'use strict';
 
 const crypto = require('crypto');
-const { MODEL, API_KEY, DEMO_CODES, DEMO_PUBLIC, PURCHASE_ENABLED } = require('../lib/config');
+const { MODEL, API_KEY, DEMO_CODES, DEMO_PUBLIC, DEFAULT_DEMO_CODE, PURCHASE_ENABLED, SESSIONS_PER_CODE_DAILY, TRUSTED_PROXY_HOPS } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
 const { readData, readLog, writeLog, appendEvents, readEvents } = require('../lib/store');
 const { createSession, requireSession, requireGuide, guideLogin } = require('../lib/auth');
+const { clientIp, capSize, createFailureLimiter, createDailyCounter } = require('../lib/limits');
 
 const DATA_FILES = { spots: 'spots.json', scenario: 'scenario.json', knowledge: 'knowledge.json' };
 const now = () => new Date().toISOString();
+const SMALL_BODY_LIMIT = 16_000;
+const EVENTS_BODY_LIMIT = 64_000;
+
+// コードと合言葉の総当たり対策（IP ごとに 10 分で 10 回失敗したら 429）。入力された値はログに出さない
+const sessionFails = createFailureLimiter();
+const guideFails = createFailureLimiter();
+const sessionsPerCode = createDailyCounter({ max: SESSIONS_PER_CODE_DAILY });
+
+// /api/events で受け付ける種類（体験アプリが送るものだけ）。llm_usage・purchase などはサーバーだけが書く
+const CLIENT_EVENT_TYPES = new Set([
+  'session_start', 'checkin', 'spot_reached', 'interaction', 'silence_end', 'question_asked', 'stt_used', 'tts',
+  'speech_rate', 'guide_ask', 'guide_ask_reply', 'reflection', 'survey', 'session_complete', 'error',
+]);
+const MAX_EVENTS_PER_SESSION = 2000;
+const MAX_EVENT_KEYS = 30;
+const eventCounts = new Map(); // sessionId -> 受け付けた件数
+
+// 値は文字列（200 字まで）・数値・真偽値・null と、その配列（20 件まで）だけ残す
+function cleanValue(v) {
+  if (typeof v === 'string') return v.slice(0, 200);
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'boolean' || v === null) return v;
+  if (Array.isArray(v)) return v.slice(0, 20).map(cleanValue).filter((x) => x !== undefined && !Array.isArray(x));
+  return undefined;
+}
+function cleanEvent(e) {
+  if (!e || typeof e !== 'object' || !CLIENT_EVENT_TYPES.has(e.type)) return null;
+  const entries = Object.entries(e).slice(0, MAX_EVENT_KEYS).map(([k, v]) => [k.slice(0, 40), cleanValue(v)]).filter(([, v]) => v !== undefined);
+  return Object.fromEntries(entries);
+}
 
 function buildStats() {
   const events = readEvents();
@@ -70,7 +101,8 @@ function buildStats() {
 }
 
 module.exports = {
-  'GET /api/config': () => ({ llm: Boolean(API_KEY), model: MODEL, purchaseEnabled: PURCHASE_ENABLED, demoPublic: DEMO_PUBLIC }),
+  // demoCode は公開してよいとき（初期値のデモコードだけのとき）だけ返す
+  'GET /api/config': () => ({ llm: Boolean(API_KEY), model: MODEL, purchaseEnabled: PURCHASE_ENABLED, demoPublic: DEMO_PUBLIC, ...(DEMO_PUBLIC ? { demoCode: DEFAULT_DEMO_CODE } : {}) }),
 
   'GET /api/data/:name': (req, params) => {
     if (!Object.hasOwn(DATA_FILES, params.name)) throw httpError(404, 'not found');
@@ -80,7 +112,7 @@ module.exports = {
   // モック決済: 実運用では Stripe Checkout 等の Webhook でコードを発行する
   'POST /api/purchase': async (req) => {
     if (!PURCHASE_ENABLED) throw httpError(403, 'purchase_disabled');
-    const body = await readBody(req);
+    const body = await readBody(req, SMALL_BODY_LIMIT);
     const code = 'KG-' + crypto.randomBytes(3).toString('hex').toUpperCase();
     const p = readLog('purchases.json', {});
     p[code] = { code, plan: body.plan || 'ai40', lang: body.lang || 'ja', priceJpy: 2000, createdAt: now(), usedAt: null };
@@ -90,11 +122,19 @@ module.exports = {
   },
 
   'POST /api/session': async (req) => {
-    const { code } = await readBody(req);
+    const ip = clientIp(req, TRUSTED_PROXY_HOPS);
+    sessionFails.check(ip);
+    const { code } = await readBody(req, SMALL_BODY_LIMIT);
     const c = String(code || '').trim().toUpperCase();
-    const p = readLog('purchases.json', {});
+    // 購入を止めているときは、過去に発行した購入コードも受け付けない
+    const p = PURCHASE_ENABLED ? readLog('purchases.json', {}) : {};
     const isDemo = DEMO_CODES.includes(c);
-    if (!isDemo && !p[c]) throw httpError(403, 'invalid_code');
+    if (!isDemo && !Object.hasOwn(p, c)) {
+      sessionFails.fail(ip);
+      console.warn('[auth] invalid code from', ip);
+      throw httpError(403, 'invalid_code');
+    }
+    if (isDemo && !sessionsPerCode.take(c)) throw httpError(429, 'code_daily_limit');
     if (p[c] && !p[c].usedAt) { p[c].usedAt = now(); writeLog('purchases.json', p); }
     const { token, sessionId } = createSession(c);
     if (isDemo) appendEvents([{ type: 'purchase', ts: now(), demoCode: true, sessionId }]);
@@ -103,15 +143,29 @@ module.exports = {
 
   'POST /api/events': async (req) => {
     const s = requireSession(req);
-    const { events = [] } = await readBody(req);
+    const { events } = await readBody(req, EVENTS_BODY_LIMIT);
+    const used = eventCounts.get(s.sessionId) || 0;
+    const room = Math.max(0, Math.min(200, MAX_EVENTS_PER_SESSION - used));
     const ts = now();
-    appendEvents(events.slice(0, 200).map((e) => ({ ...e, sessionId: s.sessionId, ts })));
-    return { ok: true };
+    const accepted = (Array.isArray(events) ? events : []).slice(0, room).map(cleanEvent).filter(Boolean)
+      .map((e) => ({ ...e, sessionId: s.sessionId, ts }));
+    if (!eventCounts.has(s.sessionId)) capSize(eventCounts);
+    eventCounts.set(s.sessionId, used + accepted.length);
+    appendEvents(accepted);
+    return { ok: true, accepted: accepted.length };
   },
 
   'POST /api/guide/login': async (req) => {
-    const { passcode } = await readBody(req);
-    return { token: guideLogin(passcode) };
+    const ip = clientIp(req, TRUSTED_PROXY_HOPS);
+    guideFails.check(ip);
+    const { passcode } = await readBody(req, SMALL_BODY_LIMIT);
+    try {
+      return { token: guideLogin(passcode) };
+    } catch (e) {
+      guideFails.fail(ip);
+      console.warn('[auth] invalid guide passcode from', ip);
+      throw e;
+    }
   },
 
   'GET /api/stats': (req) => {

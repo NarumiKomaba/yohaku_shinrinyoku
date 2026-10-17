@@ -81,6 +81,11 @@ const FAST_MPS = 1.8; // これを超えて歩いているときは 1〜2 文に
 const narrateCounts = new Map(); // sessionId -> 呼び出し回数
 
 const clip = (v, n) => String(v == null ? '' : v).slice(0, n);
+// 体験中の API の body 上限（通常は数 KB。大きな文字列で LLM のトークンを増やされないようにする）
+const WALK_BODY_LIMIT = 64_000;
+const cleanCheckin = (ci) => (ci && typeof ci === 'object'
+  ? { state: clip(ci.state, 20), desire: clip(ci.desire, 20), durationMin: ci.durationMin == null ? null : num(ci.durationMin), note: clip(ci.note, 200) }
+  : {});
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const sentencesOf = (text) => (String(text || '').match(/[^。．！？!?.]+[。．！？!?.]?/g) || []).map((x) => x.trim()).filter(Boolean);
 const limitSay = (text, n) => sentencesOf(text).slice(0, n).join(lang1(text));
@@ -267,7 +272,11 @@ function confirmTextFor(lang, v) {
 module.exports = {
   'POST /api/ask': async (req) => {
     const s = requireSession(req);
-    const { question, lang = 'ja', spotId, checkin, history = [], clientTime } = await readBody(req);
+    const b = await readBody(req, WALK_BODY_LIMIT);
+    const { question, spotId, clientTime } = b;
+    const lang = b.lang === 'en' ? 'en' : 'ja';
+    const checkin = cleanCheckin(b.checkin);
+    const history = Array.isArray(b.history) ? b.history : [];
     const q = String(question || '').slice(0, 500).trim();
     if (!q) throw httpError(400, 'empty');
 
@@ -277,7 +286,7 @@ module.exports = {
     const allSpots = readData('spots.json').spots.filter((x) => x.enabled !== false);
     const allKnowledge = readData('knowledge.json').chunks;
     const contents = [
-      ...history.slice(-6).map((h) => ({ role: h.role === 'model' ? 'model' : 'user', parts: [{ text: String(h.text).slice(0, 500) }] })),
+      ...history.slice(-6).map((h) => ({ role: h && h.role === 'model' ? 'model' : 'user', parts: [{ text: clip(h && h.text, 500) }] })),
       { role: 'user', parts: [{ text: q }] },
     ];
     try {
@@ -295,11 +304,14 @@ module.exports = {
   // 音声チェックイン: 端末内 STT の文字列から state / desire / durationMin / note を抽出する
   'POST /api/checkin/parse': async (req) => {
     const s = requireSession(req);
-    const b = await readBody(req);
+    const b = await readBody(req, WALK_BODY_LIMIT);
     const lang = b.lang === 'en' ? 'en' : 'ja';
     const transcript = clip(b.transcript, 500).trim();
     if (!transcript) throw httpError(400, 'empty');
-    const cur = b.current && typeof b.current === 'object' ? b.current : {};
+    // LLM に渡すのは決まった項目だけ（大きなデータや余計な項目を入れさせない）。durationMin は「未回答」と null を区別する
+    const raw0 = b.current && typeof b.current === 'object' ? b.current : {};
+    const { durationMin: curDuration, ...curRest } = cleanCheckin(raw0);
+    const cur = has(raw0, 'durationMin') ? { ...curRest, durationMin: curDuration } : curRest;
     const t0 = Date.now();
     let raw;
     let fallback = false;
@@ -338,7 +350,7 @@ module.exports = {
   // その場で案内を組み立てる（docs/DESIGN.md 4.1）
   'POST /api/narrate': async (req) => {
     const s = requireSession(req);
-    const b = await readBody(req);
+    const b = await readBody(req, WALK_BODY_LIMIT);
     const lang = b.lang === 'en' ? 'en' : 'ja';
     const trigger = TRIGGERS.includes(b.trigger) ? b.trigger : 'arrive';
     const spot = b.spotId && trigger !== 'between' ? readData('spots.json').spots.find((x) => x.id === b.spotId) || null : null;

@@ -10,3 +10,6 @@ scripts
 data/logs
 Dockerfile
 .dockerignore
+.env
+.env.*
+.secrets

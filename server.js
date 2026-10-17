@@ -6,7 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./lib/config');
-const { send } = require('./lib/http');
+const { send, SECURITY_HEADERS } = require('./lib/http');
 
 // "METHOD /path/:param" 形式のキーを正規表現に変換して登録
 const routes = [];
@@ -29,7 +29,7 @@ function serveStatic(res, pathname) {
   if (!file.startsWith(cfg.PUBLIC_DIR + path.sep)) return send(res, 403, 'forbidden');
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'not found');
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(buf);
   });
 }
@@ -49,20 +49,36 @@ async function handle(req, res) {
     send(res, 404, { error: 'not found' });
   } catch (e) {
     if (!e.status || e.status >= 500) console.error(`[${req.method} ${pathname}]`, e.message);
-    send(res, e.status || 500, { error: e.message });
+    // httpError で決めた短い理由だけを返す。想定外の例外（ファイルのパスなどを含みうる）は中身を返さない
+    send(res, e.status || 500, { error: e.status ? e.message : 'internal_error' });
   }
 }
 
 const server = http.createServer(handle);
+// 遅いクライアントに接続を握られ続けないようにする（録音のアップロードも 2 分あれば足りる）
+server.requestTimeout = 120_000;
+server.headersTimeout = 20_000;
+
+const isLocalHost = (host) => ['127.0.0.1', 'localhost', '::1'].includes(host);
 
 if (require.main === module) {
+  if (cfg.IS_PRODUCTION) {
+    const problems = cfg.productionProblems();
+    if (problems.length) {
+      console.error(['公開用の設定が足りないため起動しません（NODE_ENV=production）:', ...problems.map((p) => `  - ${p}`)].join('\n'));
+      process.exit(1);
+    }
+  }
   server.listen(cfg.PORT, cfg.HOST, () => {
     console.log(`Digital Nature & Wellness Instructor — http://${cfg.HOST === '0.0.0.0' ? 'localhost' : cfg.HOST}:${cfg.PORT}`);
     console.log('  体験アプリ: /   ガイドさんページ: /guide.html   集計: /admin.html');
     console.log(`  Gemini: ${cfg.API_KEY ? `key found (${cfg.KEY_SOURCE}), model=${cfg.MODEL}` : 'key NOT found → 素材・Knowledge のみで動作（フォールバック）'}`);
-    console.log(`  デモ用購入コード: ${cfg.DEMO_PUBLIC ? cfg.DEMO_CODES.join(', ') : '(環境変数で設定済み)'}${cfg.PURCHASE_ENABLED ? '' : '   購入: 停止中'}${cfg.LLM_DAILY_MAX ? `   LLM 上限: ${cfg.LLM_DAILY_MAX} 回/日` : ''}   ガイドさん合言葉: ${process.env.GUIDE_PASSCODE ? '(環境変数で設定済み)' : cfg.GUIDE_PASSCODE}`);
-    if (!['127.0.0.1', 'localhost', '::1'].includes(cfg.HOST) && !process.env.GUIDE_PASSCODE) {
-      console.warn('  ⚠ 外部から接続できる状態で既定の合言葉を使っています。GUIDE_PASSCODE を設定してください。');
+    // 合言葉と非公開のデモコードは、ログ（Cloud Run ではクラウドに残る）に出さない
+    console.log(`  デモ用購入コード: ${cfg.DEMO_PUBLIC ? cfg.DEMO_CODES.join(', ') : '(設定済み)'}${cfg.PURCHASE_ENABLED ? '' : '   購入: 停止中'}${cfg.LLM_DAILY_MAX ? `   LLM 上限: ${cfg.LLM_DAILY_MAX} 回/日` : ''}   ガイドさん合言葉: ${cfg.GUIDE_PASSCODE_IS_DEFAULT ? `${cfg.GUIDE_PASSCODE}（既定）` : '(設定済み)'}`);
+    if (!isLocalHost(cfg.HOST)) {
+      if (cfg.GUIDE_PASSCODE_IS_DEFAULT) console.warn('  ⚠ 外部から接続できる状態で既定の合言葉を使っています。GUIDE_PASSCODE を設定してください。');
+      if (cfg.PURCHASE_ENABLED) console.warn('  ⚠ 外部から接続できる状態で購入（モック）が有効です。誰でもコードを発行できます。PURCHASE_ENABLED=0 を設定してください。');
+      if (cfg.DEMO_PUBLIC) console.warn('  ⚠ 外部から接続できる状態で公開のデモコードを使っています。DEMO_CODES を設定してください。');
     }
   });
 }

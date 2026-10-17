@@ -6,9 +6,8 @@ COPY package.json server.js ./
 COPY lib/ ./lib/
 COPY routes/ ./routes/
 COPY public/ ./public/
+# data/ はガイドさんページの編集やログで書き込むため、実行ユーザー（node）の持ち物にする（logs/ は起動時に作る）
 COPY --chown=node:node data/ ./data/
-# data/ はガイドさんページの編集やログで書き込むため、実行ユーザー（node）が書けるようにする
-RUN mkdir -p /app/data/logs && chown -R node:node /app/data
 USER node
 EXPOSE 8080
 CMD ["node", "server.js"]

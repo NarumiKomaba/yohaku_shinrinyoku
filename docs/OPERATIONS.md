@@ -63,14 +63,36 @@
 
 ### 使いすぎを防ぐ設定（お試し版・公開時）
 
+`NODE_ENV=production`（Dockerfile で設定済み）で起動すると、次の設定が足りないときは起動しません。
+- `GUIDE_PASSCODE` が 16 文字以上で設定されている
+- `DEMO_CODES` が設定されていて、`DEMO2027` を含まず、どのコードも 8 文字以上
+- 購入（モック）は既定で止まる（`PURCHASE_ENABLED=1` のときだけ有効）
+
 | 変数 | おすすめ | 効果 |
 |---|---|---|
-| `PURCHASE_ENABLED=0` | 公開時は必須 | 誰でもコードを発行できる購入（モック）を止める |
 | `DEMO_CODES=<配る用のコード>` | 公開時は必須 | 初期値の `DEMO2027` を無効にし、画面にもコードを出さない |
-| `LLM_DAILY_MAX` | 200 程度 | サーバー全体の 1 日の Gemini 呼び出し上限。超えると Gemini なしの案内になる |
+| `GUIDE_PASSCODE=<16 文字以上のランダム値>` | 公開時は必須 | ガイドさんページ・集計ページの合言葉 |
+| `LLM_DAILY_MAX` | 200 程度 | サーバー全体の 1 日の Gemini 呼び出し上限（体験者向けだけ）。超えると Gemini なしの案内になる |
 | `NARRATE_MAX_PER_SESSION` | 40 程度 | 1 回の体験での案内の上限 |
+| `SESSIONS_PER_CODE_DAILY` | 必要なら | 1 つのデモコードで 1 日に始められる体験の数 |
+| `TRUSTED_PROXY_HOPS=1` | Cloud Run では必須 | 総当たり対策で、接続元 IP を正しく見分ける |
 
-`LLM_DAILY_MAX` はメモリで数えるため、再起動や複数インスタンスでは正確な上限になりません。確実な上限は、GCP の Generative Language API のクォータ（1 日のリクエスト数）で設定してください。
+`LLM_DAILY_MAX` はメモリで数えるため、再起動や複数インスタンスでは正確な上限になりません。確実な上限は、GCP の Generative Language API のクォータ（1 日のリクエスト数）で設定してください（Vertex AI Express のキー `AQ.` を使う場合は、Vertex AI 側のクォータ）。
+
+### アプリ側の守り（公開時）
+
+- **総当たり対策**: `/api/session`（コード）と `/api/guide/login`（合言葉）は、同じ IP から 10 分で 10 回失敗すると 429 を返す。失敗はログに `[auth] invalid ...` と IP だけを残す（入力された値は残さない）
+- **期限**: 体験者のセッションは 24 時間、ガイドさんのログインは 8 時間で切れる
+- **イベント**: `/api/events` は体験アプリが送る種類だけを受け付け、文字列は 200 字まで、1 セッション 2,000 件まで。`llm_usage`・`purchase` はサーバーだけが書く
+- **入力の大きさ**: 体験中の API とイベントは 64KB まで。チェックインなど LLM に渡す項目は切り詰める
+- **エラー**: 想定外のエラーは `internal_error` とだけ返し、詳しい内容はサーバーのログにだけ出す
+- **ヘッダー**: CSP（外部は Leaflet の unpkg・国土地理院の地図タイル・Overpass API だけ許可）、`X-Frame-Options: DENY`、`nosniff` など
+
+### Cloud Run で動かすとき
+
+- **インスタンスは最大 1**（`--max-instances 1`）。ログイン状態や上限の回数をメモリに持つため、複数に分かれるとログインが切れ、上限も正しく数えられない
+- **データは残らない**: Cloud Run のファイルはメモリ上にあり、インスタンスが止まると消える。ガイドさんページで編集した Spot、`events.jsonl`、`purchases.json` は再起動で元に戻る（お試し版はそれでよい）
+- 秘密の値（`GEMINI_API_KEY`・`DEMO_CODES`・`GUIDE_PASSCODE`）は `--set-secrets` で Secret Manager から渡す（`--set-env-vars` だとリビジョンの設定に平文で残る）
 
 ### コスト計算式
 

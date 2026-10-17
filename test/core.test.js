@@ -59,10 +59,10 @@ test('events_withoutSession_returns401', async () => {
 
 test('events_withSession_appendsWithSessionIdAndCapsAt200', async () => {
   const s = await h.newSession(srv.base);
-  const events = Array.from({ length: 250 }, (_, i) => ({ type: 'ev_cap_test', n: i, sessionId: 'spoofed' }));
+  const events = Array.from({ length: 250 }, (_, i) => ({ type: 'tts', chars: i, sessionId: 'spoofed' }));
   const r = await h.api(srv.base, 'POST', '/api/events', { body: { events }, headers: s.headers });
   assert.equal(r.status, 200);
-  const mine = h.readEvents(dir).filter((e) => e.type === 'ev_cap_test');
+  const mine = h.readEvents(dir).filter((e) => e.type === 'tts' && e.sessionId === s.sessionId);
   assert.equal(mine.length, 200);
   assert.ok(mine.every((e) => e.sessionId === s.sessionId), 'クライアントが sessionId を偽装できない');
   assert.ok(mine.every((e) => e.ts));
@@ -95,15 +95,14 @@ test('stats_withGuideToken_returnsAggregates', async () => {
   const s = await h.newSession(srv.base);
   await h.api(srv.base, 'POST', '/api/events', { headers: s.headers, body: { events: [
     { type: 'session_start', lang: 'ja', mode: 'ai' }, { type: 'session_complete', durationSec: 600 },
-    { type: 'llm_usage', purpose: 'narrate', inputTokens: 10, outputTokens: 5, costJpy: 1.5 },
+    { type: 'llm_usage', purpose: 'narrate', inputTokens: 10, outputTokens: 5, costJpy: 1e9 },
   ] } });
   const { json: { token } } = await h.api(srv.base, 'POST', '/api/guide/login', { body: { passcode: 'TEST-PASS' } });
   const r = await h.api(srv.base, 'GET', '/api/stats', { headers: { 'X-Guide-Token': token } });
   assert.equal(r.status, 200);
   assert.ok(r.json.funnel.started >= 1);
   assert.ok(r.json.funnel.completed >= 1);
-  assert.ok(r.json.usage.llmCalls >= 1);
-  assert.ok(r.json.usage.totalCostJpy >= 1.5);
+  assert.ok(r.json.usage.totalCostJpy < 1e9, 'クライアントが送った llm_usage は集計に入らない');
 });
 
 test('data_withWhitelistedNames_returnsJson', async () => {

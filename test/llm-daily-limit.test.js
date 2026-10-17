@@ -35,7 +35,16 @@ test('llmDailyMax_afterLimit_stopsCallingGeminiAcrossSessionsAndFallsBack', asyn
   assert.ok(errors.length >= 2, '上限に達したことがログに残る');
 });
 
+test('llmDailyMax_afterLimit_guideCallsAreNotMeteredAndStillUseGemini', async () => {
+  const stub = h.stubGemini(() => JSON.stringify({ materials: [{ type: 'fact', text: '大きな松があります。', topics: ['plant'] }], interactions: [] }));
+  const login = await h.api(srv.base, 'POST', '/api/guide/login', { body: { passcode: 'TEST-PASS' } });
+  const r = await h.api(srv.base, 'POST', '/api/guide/extract', { headers: { 'X-Guide-Token': login.json.token }, body: { transcript: 'ここに大きな松があります。', lang: 'ja' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.fallback, false, '体験者が上限を使い切っても、ガイドさんの作業は止まらない');
+  assert.equal(stub.calls, 1);
+});
+
 test('config_withLimit_doesNotExposeLimitOrKey', async () => {
   const r = await h.api(srv.base, 'GET', '/api/config');
-  assert.deepEqual(Object.keys(r.json).sort(), ['demoPublic', 'llm', 'model', 'purchaseEnabled']);
+  assert.deepEqual(Object.keys(r.json).sort(), ['demoCode', 'demoPublic', 'llm', 'model', 'purchaseEnabled']);
 });
