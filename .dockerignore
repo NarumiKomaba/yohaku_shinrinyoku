@@ -1,0 +1,15 @@
+.git
+.github
+.gitignore
+node_modules
+test
+docs
+scripts
+*.docx
+*.md
+data/logs
+Dockerfile
+.dockerignore
+.env
+.env.*
+.secrets

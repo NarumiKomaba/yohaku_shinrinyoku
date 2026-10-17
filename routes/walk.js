@@ -2,12 +2,13 @@
 // 担当: implementer-walk
 'use strict';
 
-const { MODEL, LOG_QUESTION_TEXT } = require('../lib/config');
+const { MODEL, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
 const { readData, appendEvents } = require('../lib/store');
 const { requireSession } = require('../lib/auth');
 const { callGemini, parseJson, costJpy } = require('../lib/gemini');
 const { retrieve, tokens, overlap, season, timeOfDay } = require('../lib/knowledge');
+const { capSize, createWindowCounter } = require('../lib/limits');
 
 const now = () => new Date().toISOString();
 
@@ -76,11 +77,31 @@ function similarity(a, b) {
   for (const g of A) if (B.has(g)) n++;
   return n / Math.min(A.size, B.size);
 }
-const NARRATE_LIMIT_PER_SESSION = Number(process.env.NARRATE_MAX_PER_SESSION) || 0; // 未設定 or 0 = 無制限
 const FAST_MPS = 1.8; // これを超えて歩いているときは 1〜2 文にする
-const narrateCounts = new Map(); // sessionId -> 呼び出し回数
+// 1 回の体験で Gemini を使った回数（案内・質問）。上限を超えたら素材だけの案内にする。Map は件数の上限で古いものから消す
+const narrateCounts = new Map(); // sessionId -> 回数
+const askCounts = new Map();
+function bump(map, sessionId) {
+  const n = (map.get(sessionId) || 0) + 1;
+  if (!map.has(sessionId)) capSize(map);
+  map.set(sessionId, n);
+  return n;
+}
+// 体験中の API（質問・案内・チェックイン）を呼べる回数（1 回の体験ごと）。超えたら 429
+const walkPerMin = createWindowCounter({ max: WALK_CALLS_PER_MIN, windowMs: 60_000 });
+const walkPerDay = createWindowCounter({ max: WALK_CALLS_PER_DAY, windowMs: 24 * 3600_000 });
+function walkSession(req) {
+  const s = requireSession(req);
+  if (!walkPerMin.take(s.sessionId) || !walkPerDay.take(s.sessionId)) throw httpError(429, 'too_many_requests');
+  return s;
+}
 
 const clip = (v, n) => String(v == null ? '' : v).slice(0, n);
+// 体験中の API の body 上限（通常は数 KB。大きな文字列で LLM のトークンを増やされないようにする）
+const WALK_BODY_LIMIT = 64_000;
+const cleanCheckin = (ci) => (ci && typeof ci === 'object'
+  ? { state: clip(ci.state, 20), desire: clip(ci.desire, 20), durationMin: ci.durationMin == null ? null : num(ci.durationMin), note: clip(ci.note, 200) }
+  : {});
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const sentencesOf = (text) => (String(text || '').match(/[^。．！？!?.]+[。．！？!?.]?/g) || []).map((x) => x.trim()).filter(Boolean);
 const limitSay = (text, n) => sentencesOf(text).slice(0, n).join(lang1(text));
@@ -266,8 +287,12 @@ function confirmTextFor(lang, v) {
 
 module.exports = {
   'POST /api/ask': async (req) => {
-    const s = requireSession(req);
-    const { question, lang = 'ja', spotId, checkin, history = [], clientTime } = await readBody(req);
+    const s = walkSession(req);
+    const b = await readBody(req, WALK_BODY_LIMIT);
+    const { question, spotId, clientTime } = b;
+    const lang = b.lang === 'en' ? 'en' : 'ja';
+    const checkin = cleanCheckin(b.checkin);
+    const history = Array.isArray(b.history) ? b.history : [];
     const q = String(question || '').slice(0, 500).trim();
     if (!q) throw httpError(400, 'empty');
 
@@ -277,10 +302,11 @@ module.exports = {
     const allSpots = readData('spots.json').spots.filter((x) => x.enabled !== false);
     const allKnowledge = readData('knowledge.json').chunks;
     const contents = [
-      ...history.slice(-6).map((h) => ({ role: h.role === 'model' ? 'model' : 'user', parts: [{ text: String(h.text).slice(0, 500) }] })),
+      ...history.slice(-6).map((h) => ({ role: h && h.role === 'model' ? 'model' : 'user', parts: [{ text: clip(h && h.text, 500) }] })),
       { role: 'user', parts: [{ text: q }] },
     ];
     try {
+      if (ASK_MAX_PER_SESSION && bump(askCounts, s.sessionId) > ASK_MAX_PER_SESSION) throw new Error('ask limit');
       const t0 = Date.now();
       const { text, usage } = await callGemini({ system: askSystemPrompt({ lang, spot, spots: allSpots, checkin, date, knowledge: allKnowledge }), contents });
       appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'ask', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0, ...(LOG_QUESTION_TEXT ? { question: q } : {}) }]);
@@ -294,12 +320,15 @@ module.exports = {
 
   // 音声チェックイン: 端末内 STT の文字列から state / desire / durationMin / note を抽出する
   'POST /api/checkin/parse': async (req) => {
-    const s = requireSession(req);
-    const b = await readBody(req);
+    const s = walkSession(req);
+    const b = await readBody(req, WALK_BODY_LIMIT);
     const lang = b.lang === 'en' ? 'en' : 'ja';
     const transcript = clip(b.transcript, 500).trim();
     if (!transcript) throw httpError(400, 'empty');
-    const cur = b.current && typeof b.current === 'object' ? b.current : {};
+    // LLM に渡すのは決まった項目だけ（大きなデータや余計な項目を入れさせない）。durationMin は「未回答」と null を区別する
+    const raw0 = b.current && typeof b.current === 'object' ? b.current : {};
+    const { durationMin: curDuration, ...curRest } = cleanCheckin(raw0);
+    const cur = has(raw0, 'durationMin') ? { ...curRest, durationMin: curDuration } : curRest;
     const t0 = Date.now();
     let raw;
     let fallback = false;
@@ -337,19 +366,18 @@ module.exports = {
 
   // その場で案内を組み立てる（docs/DESIGN.md 4.1）
   'POST /api/narrate': async (req) => {
-    const s = requireSession(req);
-    const b = await readBody(req);
+    const s = walkSession(req);
+    const b = await readBody(req, WALK_BODY_LIMIT);
     const lang = b.lang === 'en' ? 'en' : 'ja';
     const trigger = TRIGGERS.includes(b.trigger) ? b.trigger : 'arrive';
     const spot = b.spotId && trigger !== 'between' ? readData('spots.json').spots.find((x) => x.id === b.spotId) || null : null;
     const ctx = buildContext(b, { lang, trigger, spot });
 
-    const calls = (narrateCounts.get(s.sessionId) || 0) + 1;
-    narrateCounts.set(s.sessionId, calls);
+    const calls = bump(narrateCounts, s.sessionId);
     const t0 = Date.now();
     let result;
     try {
-      if (NARRATE_LIMIT_PER_SESSION && calls > NARRATE_LIMIT_PER_SESSION) throw new Error('narrate limit');
+      if (NARRATE_MAX_PER_SESSION && calls > NARRATE_MAX_PER_SESSION) throw new Error('narrate limit');
       const { text, usage } = await callGemini({
         system: narrateSystemPrompt(lang), contents: [{ role: 'user', parts: [{ text: JSON.stringify(ctx) }] }],
         json: true, maxTokens: 600, temperature: 0.7, timeoutMs: 7000,

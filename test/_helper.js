@@ -30,6 +30,9 @@ function setupEnv({ key = '', extraEnv = {} } = {}) {
   process.env.DATA_DIR = dir;
   process.env.GEMINI_API_KEY = key; // 空文字 = キー無し扱い（実 Gemini を呼ばない）
   process.env.GUIDE_PASSCODE = 'TEST-PASS';
+  // 開発者のシェルの設定（公開用の設定など）でテストの結果が変わらないよう、既定値に戻す
+  for (const k of ['NODE_ENV', 'K_SERVICE', 'DEMO_CODES', 'PURCHASE_ENABLED', 'LLM_DAILY_MAX', 'SESSIONS_PER_CODE_DAILY', 'SESSIONS_PER_IP_DAILY', 'TRUSTED_PROXY_HOPS',
+    'NARRATE_MAX_PER_SESSION', 'ASK_MAX_PER_SESSION', 'WALK_CALLS_PER_MIN', 'WALK_CALLS_PER_DAY', 'EVENTS_DAILY_BYTES', 'GEMINI_MODEL']) delete process.env[k];
   Object.assign(process.env, extraEnv);
   return dir;
 }

@@ -5,15 +5,25 @@ export const GSI_TILE = {
   maxZoom: 18,
 };
 
+// unpkg の Leaflet 1.9.4 のハッシュ（guide.html と同じ値）
+const LEAFLET_SRI = {
+  css: 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=',
+  js: 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=',
+};
+
 export function loadLeaflet() {
   if (window.L) return Promise.resolve(window.L);
   return new Promise((resolve, reject) => {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
     css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    css.integrity = LEAFLET_SRI.css; // 中身がすり替えられていたら読み込まない
+    css.crossOrigin = 'anonymous';
     document.head.append(css);
     const js = document.createElement('script');
     js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    js.integrity = LEAFLET_SRI.js;
+    js.crossOrigin = 'anonymous';
     js.onload = () => resolve(window.L);
     js.onerror = () => reject(new Error('Leaflet を読み込めませんでした（ネットワークを確認してください）'));
     document.head.append(js);

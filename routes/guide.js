@@ -85,8 +85,13 @@ function normalizeSpot(sp, id) {
 
 function validateSpots(spots) {
   if (!Array.isArray(spots)) throw httpError(400, 'spots must be an array');
+  const ids = new Set();
   for (const sp of spots) {
-    if (!sp.id || !Number.isFinite(sp.lat) || !Number.isFinite(sp.lng) || !sp.name) throw httpError(400, `invalid spot: ${sp.id || '(no id)'}`);
+    if (!sp || typeof sp !== 'object' || Array.isArray(sp)) throw httpError(400, 'invalid spot');
+    if (!sp.id || !Number.isFinite(sp.lat) || !Number.isFinite(sp.lng) || !sp.name) throw httpError(400, 'invalid spot');
+    const id = String(sp.id);
+    if (ids.has(id)) throw httpError(400, 'duplicate id');
+    ids.add(id);
   }
 }
 
@@ -104,7 +109,7 @@ const LANG_NAME = { ja: 'Japanese', en: 'English' };
 
 async function transcribeAudio({ audioBase64, mimeType, lang }) {
   const system = `You are a verbatim transcriber. Transcribe the speech in the audio exactly as spoken (expected language: ${LANG_NAME[lang] || 'Japanese'}, English words may be mixed in). Do not summarize, translate, correct facts, or add anything. Output the plain transcript only. If there is no speech, output an empty string.`;
-  const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [audioPart(audioBase64, mimeType), { text: 'Transcribe.' }] }], maxTokens: 4000, temperature: 0, timeoutMs: 60000 });
+  const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [audioPart(audioBase64, mimeType), { text: 'Transcribe.' }] }], maxTokens: 4000, temperature: 0, timeoutMs: 60000, metered: false });
   logUsage('guide_transcribe', usage);
   return text.trim();
 }
@@ -112,7 +117,7 @@ async function transcribeAudio({ audioBase64, mimeType, lang }) {
 // 録音ウォーク用: 発話ごとの開始秒つきで返させる
 async function transcribeSegments({ audioBase64, mimeType, lang, durationSec }) {
   const system = `You are a verbatim transcriber for a guide's field recording (expected language: ${LANG_NAME[lang] || 'Japanese'}, English words may be mixed in). Split the speech into utterances and return JSON only: {"segments":[{"start":<seconds from the start of the audio>,"end":<seconds>,"text":"<exact words>"}]}. Do not summarize, translate, correct, or add anything. Ignore wind, footsteps and silence. If there is no speech, return {"segments":[]}.`;
-  const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [audioPart(audioBase64, mimeType), { text: 'Transcribe.' }] }], maxTokens: 8000, temperature: 0, json: true, timeoutMs: 90000 });
+  const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [audioPart(audioBase64, mimeType), { text: 'Transcribe.' }] }], maxTokens: 8000, temperature: 0, json: true, timeoutMs: 90000, metered: false });
   logUsage('guide_record_transcribe', usage);
   const list = (parseJson(text).segments || []).filter((s) => s && str(s.text));
   const total = Number(durationSec) || 0;
@@ -155,7 +160,7 @@ async function extractMaterials({ transcript, lang, spot }) {
   const system = `You turn a nature guide's spoken notes into registered "materials" for one spot of a walk in Kokyo Gaien, Tokyo.\n${EXTRACT_RULES}\nReturn JSON only: {"name":{"ja":"","en":""}?,"kind"?:"","materials":[{"type":"","text":"","topics":[]}],"interactions":[{"type":""}]}`;
   const user = `${spot ? `Existing spot: ${spot.name.ja || spot.name.en}\nExisting materials (do not duplicate):\n${spot.materials.map((m) => `- ${m.text}`).join('\n') || '(none)'}\n` : ''}Transcript:\n${transcript}`;
   try {
-    const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [{ text: user }] }], maxTokens: 1500, temperature: 0.2, json: true, timeoutMs: 40000 });
+    const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [{ text: user }] }], maxTokens: 1500, temperature: 0.2, json: true, timeoutMs: 40000, metered: false });
     logUsage('guide_extract', usage);
     const out = sanitizeExtract(parseJson(text));
     if (!out.materials.length) throw new Error('no materials');
@@ -293,7 +298,7 @@ async function finishRecording(rec) {
     const system = `You turn a nature guide's spoken notes, recorded while walking in Kokyo Gaien, Tokyo, into registered "materials". Each numbered place has the guide's transcript.\n${EXTRACT_RULES}\nReturn JSON only: {"places":[{"index":0,"name":{"ja":"","en":""}?,"kind"?:"","materials":[{"type":"","text":"","topics":[]}],"interactions":[{"type":""}]}]}`;
     const user = found.map((c, i) => `[${i}]\n${c.transcript}`).join('\n\n');
     try {
-      const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [{ text: user }] }], maxTokens: 4000, temperature: 0.2, json: true, timeoutMs: 60000 });
+      const { text, usage } = await callGemini({ system, contents: [{ role: 'user', parts: [{ text: user }] }], maxTokens: 4000, temperature: 0.2, json: true, timeoutMs: 60000, metered: false });
       logUsage('guide_record_extract', usage);
       extracted = parseJson(text).places || [];
     } catch { /* フォールバックは下で */ }
@@ -323,9 +328,15 @@ module.exports = {
     requireGuide(req);
     const body = await readBody(req);
     validateSpots(body.spots);
+    // 1 件ずつ PUT /api/guide/spots/:id と同じ検査・整形を通す（体験者の画面や LLM のプロンプトに入るため）
+    const spots = body.spots.map((sp) => {
+      const id = String(sp.id);
+      checkSpotId(id);
+      return normalizeSpot({ ...sp, id }, id);
+    });
     const current = readData('spots.json');
-    writeData('spots.json', { ...current, spots: body.spots });
-    return { ok: true, count: body.spots.length };
+    writeData('spots.json', { ...current, spots });
+    return { ok: true, count: spots.length };
   },
 
   'PUT /api/guide/spots/:id': async (req, params) => {
@@ -362,7 +373,9 @@ module.exports = {
       return { text: await transcribeAudio({ audioBase64, mimeType, lang }) };
     } catch (e) {
       if (e.status) throw e;
-      throw httpError(502, `transcribe_failed: ${e.message}`.slice(0, 200));
+      // 上流のエラー文（API の応答など）は画面に返さず、サーバーのログにだけ残す
+      console.error('[guide/transcribe]', e.message);
+      throw httpError(e.code === 'llm_daily_limit' ? 503 : 502, 'transcribe_failed');
     }
   },
 
@@ -401,7 +414,8 @@ module.exports = {
         chunk.segments = segs.map((s) => ({ t0: startedMs + s.s0 * 1000, t1: startedMs + s.s1 * 1000, text: s.text }));
       } catch (e) {
         if (e.status && e.status < 500) throw e;
-        chunk.error = String(e.message).slice(0, 200);
+        console.error('[guide/recordings/chunk]', e.message);
+        chunk.error = 'transcribe_failed';
       }
     }
     // 音声は保存しない。文字起こしの間に状態が変わりうるので再読込して追記する
