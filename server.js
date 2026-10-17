@@ -60,7 +60,7 @@ if (require.main === module) {
     console.log(`Digital Nature & Wellness Instructor — http://${cfg.HOST === '0.0.0.0' ? 'localhost' : cfg.HOST}:${cfg.PORT}`);
     console.log('  体験アプリ: /   ガイドさんページ: /guide.html   集計: /admin.html');
     console.log(`  Gemini: ${cfg.API_KEY ? `key found (${cfg.KEY_SOURCE}), model=${cfg.MODEL}` : 'key NOT found → 素材・Knowledge のみで動作（フォールバック）'}`);
-    console.log(`  デモ用購入コード: ${cfg.DEMO_CODES.join(', ')}   ガイドさん合言葉: ${process.env.GUIDE_PASSCODE ? '(環境変数で設定済み)' : cfg.GUIDE_PASSCODE}`);
+    console.log(`  デモ用購入コード: ${cfg.DEMO_PUBLIC ? cfg.DEMO_CODES.join(', ') : '(環境変数で設定済み)'}${cfg.PURCHASE_ENABLED ? '' : '   購入: 停止中'}${cfg.LLM_DAILY_MAX ? `   LLM 上限: ${cfg.LLM_DAILY_MAX} 回/日` : ''}   ガイドさん合言葉: ${process.env.GUIDE_PASSCODE ? '(環境変数で設定済み)' : cfg.GUIDE_PASSCODE}`);
     if (!['127.0.0.1', 'localhost', '::1'].includes(cfg.HOST) && !process.env.GUIDE_PASSCODE) {
       console.warn('  ⚠ 外部から接続できる状態で既定の合言葉を使っています。GUIDE_PASSCODE を設定してください。');
     }

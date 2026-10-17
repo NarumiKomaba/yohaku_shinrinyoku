@@ -24,6 +24,8 @@ const app = {
   sim: null,
   wakeLock: null,
   finishedInfo: null,
+  // サーバーの設定（/api/config）。読めるまでは安全側（購入なし・デモコード非表示）
+  access: { purchaseEnabled: false, demoPublic: false },
 };
 const voice = new Voice();
 const S = () => STRINGS[app.lang];
@@ -72,7 +74,16 @@ function applyI18n() {
   $$('.lang-switch .chip').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === app.lang)));
   document.title = `${S().brand} ${S().edition}`;
   voice.setLang(app.lang);
+  applyAccess();
   if (app.scenario) renderChoices();
+}
+
+// 購入ボタンとデモコードの案内は、サーバーの設定に合わせて出し分ける
+function applyAccess() {
+  const { purchaseEnabled, demoPublic } = app.access;
+  $('#buy').hidden = !purchaseEnabled;
+  $('#buy-note').textContent = demoPublic ? S().buyNote : S().buyNotePrivate;
+  $('#demo-note').textContent = demoPublic ? S().demoNote : S().demoNotePrivate;
 }
 
 function chipGroup(container, options, { multi = false, onChange }) {
@@ -178,15 +189,23 @@ $('#code-form').addEventListener('submit', async (e) => {
 });
 
 // デモで試す: デモコード自動入力 → チェックイン → 準備画面を飛ばしてシミュレーションで開始
-const DEMO_CODE = 'DEMO2027';
+// デモコードが公開されていない（お試し版など）ときは、入力されたコードを使う
+const PUBLIC_DEMO_CODE = 'DEMO2027';
 $('#demo-start').addEventListener('click', async () => {
+  const code = app.access.demoPublic ? PUBLIC_DEMO_CODE : $('#code').value.trim();
+  if (!code) {
+    $('#code-error').textContent = S().demoNeedCode;
+    $('#code-error').hidden = false;
+    $('#code').focus();
+    return;
+  }
   voice.unlock();
   unlockAudio();
   app.demo = true;
-  $('#code').value = DEMO_CODE;
+  $('#code').value = code;
   $('#code-error').hidden = true;
   try {
-    await enterSession(DEMO_CODE);
+    await enterSession(code);
   } catch {
     $('#code-error').textContent = S().invalidCode;
     $('#code-error').hidden = false;
@@ -627,10 +646,12 @@ $('#restart').addEventListener('click', () => location.reload());
 
 // ---------- 起動 ----------
 (async () => {
-  const [scenario, spots] = await Promise.all([
+  const [scenario, spots, config] = await Promise.all([
     fetch('/api/data/scenario').then((r) => r.json()),
     fetch('/api/data/spots').then((r) => r.json()),
+    fetch('/api/config').then((r) => r.json()).catch(() => ({})),
   ]);
+  app.access = { purchaseEnabled: config.purchaseEnabled === true, demoPublic: config.demoPublic === true };
   app.scenario = scenario;
   app.spots = spots.spots;
   applyI18n();

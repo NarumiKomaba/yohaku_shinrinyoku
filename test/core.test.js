@@ -16,6 +16,12 @@ test('config_withoutKey_reportsLlmFalse', async () => {
   assert.equal(r.json.llm, false);
 });
 
+test('config_byDefault_allowsPurchaseAndPublicDemo', async () => {
+  const r = await h.api(srv.base, 'GET', '/api/config');
+  assert.equal(r.json.purchaseEnabled, true);
+  assert.equal(r.json.demoPublic, true);
+});
+
 test('purchase_thenSession_issuesTokenAndMarksUsed', async () => {
   const p = await h.api(srv.base, 'POST', '/api/purchase', { body: { plan: 'ai40', lang: 'en' } });
   assert.equal(p.status, 200);

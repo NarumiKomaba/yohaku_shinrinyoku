@@ -2,7 +2,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { MODEL, API_KEY, DEMO_CODES } = require('../lib/config');
+const { MODEL, API_KEY, DEMO_CODES, DEMO_PUBLIC, PURCHASE_ENABLED } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
 const { readData, readLog, writeLog, appendEvents, readEvents } = require('../lib/store');
 const { createSession, requireSession, requireGuide, guideLogin } = require('../lib/auth');
@@ -70,7 +70,7 @@ function buildStats() {
 }
 
 module.exports = {
-  'GET /api/config': () => ({ llm: Boolean(API_KEY), model: MODEL }),
+  'GET /api/config': () => ({ llm: Boolean(API_KEY), model: MODEL, purchaseEnabled: PURCHASE_ENABLED, demoPublic: DEMO_PUBLIC }),
 
   'GET /api/data/:name': (req, params) => {
     if (!Object.hasOwn(DATA_FILES, params.name)) throw httpError(404, 'not found');
@@ -79,6 +79,7 @@ module.exports = {
 
   // モック決済: 実運用では Stripe Checkout 等の Webhook でコードを発行する
   'POST /api/purchase': async (req) => {
+    if (!PURCHASE_ENABLED) throw httpError(403, 'purchase_disabled');
     const body = await readBody(req);
     const code = 'KG-' + crypto.randomBytes(3).toString('hex').toUpperCase();
     const p = readLog('purchases.json', {});
