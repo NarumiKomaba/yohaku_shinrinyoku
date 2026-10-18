@@ -97,3 +97,33 @@ test('speak_emptyText_resolvesTrueImmediately', async () => {
   const v = new Voice();
   assert.equal(await v.speak(''), true);
 });
+
+test('speak_whenRemoteFetchFails_fallsBackToBrowserVoice', async () => {
+  spokenByUtterance.length = 0;
+  const v = new Voice();
+  v.remote = true;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ fallback: true }), { status: 200 });
+  try {
+    const ok = await v.speak('こんにちは。');
+    assert.equal(ok, true);
+    assert.deepEqual(spokenByUtterance, ['こんにちは。']);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('speak_afterThreeRemoteFailures_stopsUsingRemote', async () => {
+  const v = new Voice();
+  v.remote = true;
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ fallback: true }), { status: 200 }); };
+  try {
+    for (let i = 0; i < 4; i++) await v.speak('あ。');
+    assert.equal(v.remote, false);
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

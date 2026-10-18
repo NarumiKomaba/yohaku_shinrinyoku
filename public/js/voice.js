@@ -1,5 +1,8 @@
-// ブラウザ標準の音声合成 (speechSynthesis) と音声認識 (SpeechRecognition) の薄いラッパー
+// 音声合成（Gemini の音声 /api/tts を優先、だめならブラウザ標準の speechSynthesis）と音声認識 (SpeechRecognition) の薄いラッパー
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const REMOTE_TIMEOUT_MS = 8000; // Gemini の音声がこれより遅ければブラウザの音声に切り替える
+const REMOTE_MAX_FAILS = 3; // 続けて失敗したら、以後はブラウザの音声だけにする
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
 
 export class Voice {
   constructor() {
@@ -12,11 +15,16 @@ export class Voice {
     this.onSpeak = null; // (chars) => void  利用量ログ用
     this.onError = null; // (errorType, sentence) => void  読み上げ失敗の通知（not-allowed 等）
     this._token = 0;
+    this.remote = false; // Gemini の音声を使うか（app.js が /api/config を見て決める）
+    this.token = null; // セッショントークン（X-Session-Token）
+    this._audio = null; // 再生中の Audio
+    this._abort = new Set(); // 取得中の fetch の AbortController
+    this._fails = 0;
     this._recognizer = null;
     if (this.synth) this.synth.onvoiceschanged = () => this._pickVoice();
   }
 
-  get canSpeak() { return Boolean(this.synth); }
+  get canSpeak() { return Boolean(this.synth) || this.remote; }
   get canListen() { return Boolean(Recognition); }
 
   setLang(lang) {
@@ -36,28 +44,107 @@ export class Voice {
 
   // iOS/Android ではユーザー操作の中で一度発話させないと以後の自動発話がブロックされる
   unlock() {
+    try { const a = new Audio(SILENT_WAV); a.volume = 0; a.play().catch(() => {}); } catch { /* 無音の再生が許されなくても続ける */ }
     if (!this.synth) return;
     const u = new SpeechSynthesisUtterance(' ');
     u.volume = 0;
     this.synth.speak(u);
   }
 
+  // Gemini の音声（WAV）を取って blob: URL にする。失敗・上限・時間切れは null（呼び出し側がブラウザの音声に切り替える）
+  async _fetchAudio(sentence) {
+    const ctrl = new AbortController();
+    this._abort.add(ctrl);
+    const timer = setTimeout(() => ctrl.abort(), REMOTE_TIMEOUT_MS);
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(this.token ? { 'X-Session-Token': this.token } : {}) },
+        body: JSON.stringify({ text: sentence, lang: this.lang }),
+        signal: ctrl.signal,
+      });
+      const data = await res.json();
+      if (!res.ok || data.fallback || !data.audio) return null;
+      const bin = atob(data.audio);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return URL.createObjectURL(new Blob([bytes], { type: data.mime || 'audio/wav' }));
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+      this._abort.delete(ctrl);
+    }
+  }
+
+  // 取得の結果を数える。続けて失敗したらこの体験の間はブラウザの音声に固定する
+  _noteRemote(url) {
+    if (url) { this._fails = 0; return; }
+    if (++this._fails >= REMOTE_MAX_FAILS) this.remote = false;
+  }
+
+  // Gemini の音声を再生する。再生できたら true / 中断されたら false / 再生できなければ null
+  _playUrl(url, token) {
+    return new Promise((resolve) => {
+      const a = new Audio(url);
+      let settled = false;
+      const done = (v) => {
+        if (settled) return;
+        settled = true;
+        if (this._audio === a) this._audio = null;
+        this._pendingResolve = null;
+        URL.revokeObjectURL(url);
+        resolve(v);
+      };
+      this._audio = a;
+      this._pendingResolve = (ok) => { a.pause(); done(ok); };
+      a.onended = () => done(token === this._token);
+      a.onerror = () => done(token === this._token ? null : false);
+      a.play().catch(() => done(token === this._token ? null : false));
+    });
+  }
+
   // 長文は Chrome で途中停止するため文単位に分割して順に読み上げる。cancel() で中断すると false で resolve。
   async speak(text) {
-    if (!this.synth || !text) return true;
+    if ((!this.synth && !this.remote) || !text) return true;
     const token = ++this._token;
     const sentences = String(text).match(/[^。．！？!?.]+[。．！？!?.]?/g) || [text];
     this.onSpeak?.(text.length);
-    for (const s of sentences) {
+    const clean = sentences.map((x) => x.trim());
+    // Gemini の音声は次の文を先に取っておき、待ち時間を減らす
+    const audio = clean.map(() => null);
+    const prefetch = (i) => { if (this.remote && clean[i] && !audio[i]) audio[i] = this._fetchAudio(clean[i]); };
+    prefetch(0);
+    for (let i = 0; i < sentences.length; i++) {
       if (token !== this._token) return false;
-      const ok = await this._speakOne(s.trim(), token);
+      prefetch(i + 1);
+      const ok = await this._speakOne(clean[i], token, audio[i]);
       if (!ok) return false;
-      if (s !== sentences[sentences.length - 1] && !(await this.pause(this.sentencePauseMs))) return false;
+      if (i < sentences.length - 1 && !(await this.pause(this.sentencePauseMs))) return false;
     }
     return token === this._token;
   }
 
-  _speakOne(sentence, token, retry = false) {
+  // 1 文を読み上げる。Gemini の音声があればそれを再生し、取れない・再生できないときはブラウザの音声に切り替える
+  async _speakOne(sentence, token, audioPromise) {
+    if (audioPromise) {
+      const url = await audioPromise;
+      this._noteRemote(url);
+      if (token !== this._token) { if (url) URL.revokeObjectURL(url); return false; }
+      if (url) {
+        const played = await this._playUrl(url, token);
+        if (played !== null) return played;
+      }
+    }
+    if (!this.synth) {
+      // 読み上げる方法がないときも体験は止めず、字幕を読む時間だけ待つ
+      this.onError?.('no-tts', sentence);
+      return this.pause(Math.min(6000, sentence.length * 120));
+    }
+    return this._speakLocal(sentence, token);
+  }
+
+  _speakLocal(sentence, token, retry = false) {
     return new Promise((resolve) => {
       if (!sentence) return resolve(true);
       const u = new SpeechSynthesisUtterance(sentence);
@@ -97,7 +184,7 @@ export class Voice {
         if (retry) return failSoft('no-start');
         settled = true;
         this._pendingResolve = null;
-        this._speakOne(sentence, token, true).then(resolve);
+        this._speakLocal(sentence, token, true).then(resolve);
       }, 4000);
       if (this.synth.paused) this.synth.resume();
       this.synth.speak(u);
@@ -116,6 +203,8 @@ export class Voice {
   cancel() {
     this._token++;
     this._pauseCancel?.();
+    for (const c of this._abort) c.abort();
+    this._audio?.pause();
     this.synth?.cancel();
     this._pendingResolve?.(false);
   }

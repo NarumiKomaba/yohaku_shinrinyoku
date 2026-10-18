@@ -59,6 +59,8 @@ async function load() {
       ['1 利用あたり（円）', s.usage.costPerSessionJpy],
       ['STT 利用回数（ブラウザ・無料）', s.usage.sttCount],
       ['TTS 読み上げ文字数（ブラウザ・無料）', s.usage.ttsChars],
+      ['Gemini 音声の回数', s.usage.geminiTtsCalls],
+      ['Gemini 音声の費用（円）', s.usage.geminiTtsCostJpy],
     ]),
     card('Experience: アンケート', [
       ['回答数', s.survey.n],

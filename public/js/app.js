@@ -178,9 +178,19 @@ $('#buy').addEventListener('click', async () => {
   }
 });
 
+// Gemini の音声が使えるか（サーバーの設定）を見て、読み上げを切り替える。失敗が続いたらこの体験の間はブラウザの音声にする
+async function setupRemoteVoice() {
+  voice.token = app.token;
+  try {
+    const cfg = await fetch('/api/config').then((r) => r.json());
+    voice.remote = Boolean(cfg.tts);
+  } catch { voice.remote = false; }
+}
+
 async function enterSession(code) {
   const { token } = await api('/api/session', { code });
   app.token = token;
+  setupRemoteVoice();
   show('screen-checkin');
   startVoiceCheckin();
 }

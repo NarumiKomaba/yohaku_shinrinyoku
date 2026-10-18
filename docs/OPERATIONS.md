@@ -76,6 +76,7 @@
 | `SESSIONS_PER_CODE_DAILY` | 30 程度（必須） | 1 つのデモコードで 1 日に始められる体験の数 |
 | `TRUSTED_PROXY_HOPS=1` | 必須（ロードバランサーを前に置くなら 2） | 総当たり対策で、接続元 IP を正しく見分ける。0 のままだと全員が同じ接続元として数えられ、1 人の失敗で全員がログインできなくなる |
 | `GEMINI_MODEL=gemini-3.8-flash` | 新しいプロジェクトでは必須 | `gemini-2.5-flash` は新しいプロジェクトでは使えない。料金は `GEMINI_PRICE_IN_PER_M=0.75`・`GEMINI_PRICE_OUT_PER_M=3.75` |
+| `TTS_MAX_PER_SESSION` | 20〜40 程度（0 = Gemini の音声を使わない） | 1 回の体験で Gemini の音声にする文の数。1 文はおよそ数十トークンの入力と数百トークンの音声出力で、1 体験あたり数円〜十数円が目安（集計ページの「Gemini 音声の費用」で実際を確認）。`GEMINI_TTS_MODEL`・`GEMINI_TTS_VOICE`・`GEMINI_TTS_PRICE_*` で変える。`LLM_DAILY_MAX` にも数えるので、音声を使うなら 1 日の上限も見直す |
 
 `LLM_DAILY_MAX` はメモリで数えるため、再起動や複数インスタンスでは正確な上限になりません。確実な上限は、GCP の Generative Language API のクォータ（1 日のリクエスト数）で設定してください（Vertex AI Express のキー `AQ.` を使う場合は、Vertex AI 側のクォータ）。
 

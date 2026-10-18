@@ -46,5 +46,5 @@ test('llmDailyMax_afterLimit_guideCallsAreNotMeteredAndStillUseGemini', async ()
 
 test('config_withLimit_doesNotExposeLimitOrKey', async () => {
   const r = await h.api(srv.base, 'GET', '/api/config');
-  assert.deepEqual(Object.keys(r.json).sort(), ['demoCode', 'demoPublic', 'llm', 'model', 'purchaseEnabled']);
+  assert.deepEqual(Object.keys(r.json).sort(), ['demoCode', 'demoPublic', 'llm', 'model', 'purchaseEnabled', 'tts']);
 });

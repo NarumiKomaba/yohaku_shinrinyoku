@@ -2,12 +2,12 @@
 // 担当: implementer-walk
 'use strict';
 
-const { MODEL, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY } = require('../lib/config');
+const { MODEL, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY, TTS_MODEL, TTS_MAX_PER_SESSION, TTS_PRICE_IN, TTS_PRICE_OUT, USD_JPY } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
 const { getSpots, appendEvents } = require('../lib/store');
 const { readStatic } = require('../lib/static-data');
 const { requireSession } = require('../lib/auth');
-const { callGemini, parseJson, costJpy } = require('../lib/gemini');
+const { callGemini, callGeminiTts, pcmToWav, parseJson, costJpy } = require('../lib/gemini');
 const { retrieve, tokens, overlap, season, timeOfDay } = require('../lib/knowledge');
 const { capSize, createWindowCounter } = require('../lib/limits');
 
@@ -82,6 +82,7 @@ const FAST_MPS = 1.8; // これを超えて歩いているときは 1〜2 文に
 // 1 回の体験で Gemini を使った回数（案内・質問）。上限を超えたら素材だけの案内にする。Map は件数の上限で古いものから消す
 const narrateCounts = new Map(); // sessionId -> 回数
 const askCounts = new Map();
+const ttsCounts = new Map();
 function bump(map, sessionId) {
   const n = (map.get(sessionId) || 0) + 1;
   if (!map.has(sessionId)) capSize(map);
@@ -365,6 +366,26 @@ module.exports = {
     const confirmText = (!fallback && clip(raw.confirmText, 160).trim()) || confirmTextFor(lang, { durationMin, note });
     await appendEvents([...events, { type: 'checkin_parse', ts: now(), sessionId: s.sessionId, latencyMs: Date.now() - t0, fallback, missing }]);
     return { state, desire, durationMin: durationMin === undefined ? null : durationMin, note, missing, confirmText, fallback };
+  },
+
+  // Gemini の音声で読み上げる。使えない・上限・失敗のときは fallback: true を返し、ブラウザの音声に戻させる
+  'POST /api/tts': async (req) => {
+    const s = walkSession(req);
+    const b = await readBody(req, WALK_BODY_LIMIT);
+    const lang = b.lang === 'en' ? 'en' : 'ja';
+    const text = clip(b.text, 300).trim();
+    if (!text) throw httpError(400, 'empty');
+    if (!TTS_MAX_PER_SESSION || bump(ttsCounts, s.sessionId) > TTS_MAX_PER_SESSION) return { fallback: true };
+    const t0 = Date.now();
+    try {
+      const { pcm, usage } = await callGeminiTts({ text, lang });
+      const cost = ((usage.inputTokens * TTS_PRICE_IN + usage.outputTokens * TTS_PRICE_OUT) / 1e6) * USD_JPY;
+      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'tts', model: TTS_MODEL, ...usage, costJpy: cost, latencyMs: Date.now() - t0 }]);
+      return { audio: pcmToWav(pcm).toString('base64'), mime: 'audio/wav' };
+    } catch (e) {
+      await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-tts', message: e.message }]);
+      return { fallback: true };
+    }
   },
 
   // その場で案内を組み立てる（docs/DESIGN.md 4.1）

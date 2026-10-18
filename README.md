@@ -83,6 +83,10 @@ Gemini API キーは Windows のユーザー環境変数から自動的に読み
 | `NARRATE_MAX_PER_SESSION` | `0`（無制限） | 1 回の体験での案内（narrate）の Gemini 呼び出し上限。超えたら素材だけの案内。公開では必須 |
 | `ASK_MAX_PER_SESSION` | `0`（無制限） | 1 回の体験での自由質問（ask）の Gemini 呼び出し上限。超えたら素材と Knowledge だけで答える。公開では必須 |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | 使用する Gemini モデル。新しく作った GCP プロジェクトでは `gemini-2.5-flash` が使えないので、`gemini-3.8-flash` などを指定する（Flash 系は考える時間を 0 にして送る） |
+| `GEMINI_TTS_MODEL` | `gemini-2.5-flash-preview-tts` | 読み上げに使う Gemini の音声モデル |
+| `GEMINI_TTS_VOICE` | `Kore` | 読み上げの声の名前 |
+| `TTS_MAX_PER_SESSION` | `0`（使わない） | 1 回の体験で Gemini の音声で読み上げる回数（1 文ごとに 1 回）。0 ならブラウザの音声だけ。超えた分・失敗・8 秒以内に取れないときはブラウザの音声に戻る。1 日の上限 `LLM_DAILY_MAX` にも数える |
+| `GEMINI_TTS_PRICE_IN_PER_M` / `GEMINI_TTS_PRICE_OUT_PER_M` | `0.5` / `10` | 音声合成の単価（1M トークンあたり USD、概算。集計ページの費用に使う） |
 | `PORT` | `3000` | リッスンポート |
 | `HOST` | `127.0.0.1` | バインドアドレス（`0.0.0.0` でLAN公開） |
 | `GEMINI_PRICE_IN_PER_M` | `0.3` | 入力トークン 1M あたりの USD |
