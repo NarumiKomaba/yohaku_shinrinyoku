@@ -79,9 +79,9 @@ function similarity(a, b) {
   return n / Math.min(A.size, B.size);
 }
 const FAST_MPS = 1.8; // これを超えて歩いているときは 1〜2 文にする
-// 1 回の体験で Gemini を使った回数（案内・質問）。上限を超えたら素材だけの案内にする。Map は件数の上限で古いものから消す
-const ttsCounts = new Map();
-const narrateCounts = new Map(); // sessionId -> 回数
+// 1 回の体験で Gemini を使った回数（音声・案内・質問）。上限を超えたら素材だけの案内・端末の音声にする。Map は件数の上限で古いものから消す
+const ttsCounts = new Map(); // sessionId -> 回数
+const narrateCounts = new Map();
 const askCounts = new Map();
 function bump(map, sessionId) {
   const n = (map.get(sessionId) || 0) + 1;
@@ -240,7 +240,6 @@ function fallbackNarrate(ctx, spot) {
   if (!out.say && ctx.trigger === 'reply') return { ...out, say: END_LINE[ctx.lang], next: 'move_on' }; // 「もっと」に出せる新しい素材が無い
   return out;
 }
-
 
 // ---------- /api/checkin/parse ----------
 const STATES = ['head', 'body', 'low', 'ok'];
