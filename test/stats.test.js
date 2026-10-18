@@ -34,6 +34,7 @@ test('buildStats_countsFunnelCostAndSurvey', () => {
   assert.deepEqual(s.language, { ja: 2, en: 1 });
   assert.equal(s.usage.llmCalls, 2);
   assert.equal(s.usage.totalCostJpy, 3);
+  assert.equal(s.usage.geminiTtsCalls, 0);
   assert.equal(s.usage.costPerSessionJpy, 2, '体験 1 回あたりは体験中の呼び出しだけ');
   assert.equal(s.survey.n, 1);
   assert.deepEqual(s.survey.next, { x: 1, y: 1 });
@@ -57,4 +58,18 @@ test('readStatic_readsOnce_andReturnsFrozenData', () => {
   const a = readStatic('knowledge.json');
   assert.equal(readStatic('knowledge.json'), a, '同じものを使い回す');
   assert.ok(Object.isFrozen(a) && Object.isFrozen(a.chunks) && Object.isFrozen(a.chunks[0]));
+});
+
+test('buildStats_withTtsUsage_separatesTtsFromConversation', () => {
+  const events = [
+    ev('llm_usage', { sessionId: 'a', purpose: 'narrate', costJpy: 2 }),
+    ev('llm_usage', { sessionId: 'a', purpose: 'tts', costJpy: 0.5 }),
+    ev('llm_usage', { sessionId: 'a', purpose: 'tts', costJpy: 0.5 }),
+  ];
+  const u = buildStats(events, [], { model: 'm' }).usage;
+  assert.equal(u.llmCalls, 1);
+  assert.equal(u.llmCostJpy, 2);
+  assert.equal(u.geminiTtsCalls, 2);
+  assert.equal(u.geminiTtsCostJpy, 1);
+  assert.equal(u.totalCostJpy, 3);
 });

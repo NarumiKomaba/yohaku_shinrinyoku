@@ -71,6 +71,9 @@
 | `DEMO_CODES=<配る用のコード>` | 公開時は必須 | 初期値の `DEMO2027` を無効にし、画面にもコードを出さない |
 | `GUIDE_PASSCODE=<16 文字以上のランダム値>` | 公開時は必須 | ガイドさんページ・集計ページの合言葉 |
 | `LLM_DAILY_MAX` | 200 程度 | サーバー全体の 1 日の Gemini 呼び出し上限（体験者向けだけ）。超えると Gemini なしの案内になる |
+| `TTS_DAILY_MAX` | 既定 3000 | サーバー全体の 1 日の Gemini 音声（`gemini-3.8-flash-tts`）作成回数。会話の `LLM_DAILY_MAX` とは別に数える。超えると端末の音声になる |
+| `TTS_MAX_PER_SESSION` | 既定 150 | 1 回の体験で作れる音声の回数（無制限にはならない）。超えると端末の音声になる |
+| `GEMINI_TTS_MODEL` / `GEMINI_TTS_VOICE` / `GEMINI_TTS_STYLE` | 既定 `gemini-3.8-flash-tts` / `Kore` / 落ち着いた・あたたかい・ゆっくりした声 | 音声のモデル・声・声の雰囲気。単価は `GEMINI_TTS_PRICE_IN_PER_M`（既定 0.5）・`GEMINI_TTS_PRICE_OUT_PER_M`（既定 9）。2027-01-01 から自動で 1.0・18 になる |
 | `NARRATE_MAX_PER_SESSION` | 40 程度（必須） | 1 回の体験での案内の上限 |
 | `ASK_MAX_PER_SESSION` | 20 程度（必須） | 1 回の体験での自由質問の上限 |
 | `SESSIONS_PER_CODE_DAILY` | 30 程度（必須） | 1 つのデモコードで 1 日に始められる体験の数 |

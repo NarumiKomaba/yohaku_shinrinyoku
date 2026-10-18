@@ -2,7 +2,7 @@
 // 担当: implementer-walk
 'use strict';
 
-const { MODEL, TTS_MODEL, TTS_VOICE, TTS_MAX_PER_SESSION, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY } = require('../lib/config');
+const { MODEL, TTS_MODEL, TTS_VOICE, TTS_STYLE, TTS_MAX_PER_SESSION, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
 const { getSpots, appendEvents } = require('../lib/store');
 const { readStatic } = require('../lib/static-data');
@@ -306,19 +306,26 @@ module.exports = {
     const b = await readBody(req, WALK_BODY_LIMIT);
     const text = clip(b.text, TTS_MAX_CHARS).trim();
     if (!text) throw httpError(400, 'empty');
-    if (TTS_MAX_PER_SESSION && bump(ttsCounts, s.sessionId) > TTS_MAX_PER_SESSION) throw httpError(429, 'tts_limit');
+    if (bump(ttsCounts, s.sessionId) > TTS_MAX_PER_SESSION) throw httpError(429, 'tts_limit');
     const t0 = Date.now();
     try {
+      // 3.x は声の雰囲気を speech_metadata.style で指定する。2.5 は文章の前置きで指定する
+      const part = /2\.5/.test(TTS_MODEL)
+        ? { text: `Read the following aloud in a ${TTS_STYLE}:\n${text}` }
+        : { text, speech_metadata: { style: TTS_STYLE } };
       const { audio, usage } = await callGemini({
         system: '',
-        contents: [{ role: 'user', parts: [{ text: `Read the following aloud in a calm, warm, unhurried voice, leaving natural pauses between sentences:\n${text}` }] }],
+        contents: [{ role: 'user', parts: [part] }],
         speech: { model: TTS_MODEL, voice: TTS_VOICE }, timeoutMs: 15000,
       });
       if (!audio) throw new Error('no audio');
-      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'tts', model: TTS_MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 }]);
-      return { mimeType: 'audio/wav', data: pcmToWav(Buffer.from(audio.data, 'base64'), audio.mimeType).toString('base64') };
+      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'tts', model: TTS_MODEL, ...usage, costJpy: costJpy(usage, 'tts'), latencyMs: Date.now() - t0 }]);
+      const raw = Buffer.from(audio.data, 'base64');
+      // 3.x は RIFF ヘッダー付きの WAV で返る。ヘッダーなしの PCM（2.5・AUDIO_L16）だけ WAV にする
+      const wav = raw.subarray(0, 4).toString() === 'RIFF' ? raw : pcmToWav(raw, audio.mimeType);
+      return { mimeType: 'audio/wav', data: wav.toString('base64') };
     } catch (e) {
-      await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-tts', message: e.message }]);
+      if (e.code !== 'tts_daily_limit') await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-tts', message: e.message }]);
       throw httpError(503, 'tts_unavailable');
     }
   },
