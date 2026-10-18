@@ -130,7 +130,7 @@ async function findPurchase(ip, c) {
 
 module.exports = {
   // demoCode は公開してよいとき（初期値のデモコードだけのとき）だけ返す
-  'GET /api/config': () => ({ llm: Boolean(API_KEY), model: MODEL, purchaseEnabled: PURCHASE_ENABLED, demoPublic: DEMO_PUBLIC, ...(DEMO_PUBLIC ? { demoCode: DEFAULT_DEMO_CODE } : {}) }),
+  'GET /api/config': () => ({ llm: Boolean(API_KEY), tts: Boolean(API_KEY), model: MODEL, purchaseEnabled: PURCHASE_ENABLED, demoPublic: DEMO_PUBLIC, ...(DEMO_PUBLIC ? { demoCode: DEFAULT_DEMO_CODE } : {}) }),
 
   'GET /api/data/:name': (req, params) => {
     if (!Object.hasOwn(DATA_FILES, params.name)) throw httpError(404, 'not found');

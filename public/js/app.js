@@ -672,6 +672,10 @@ $('#restart').addEventListener('click', () => location.reload());
     fetch('/api/data/spots').then((r) => r.json()),
     fetch('/api/config').then((r) => r.json()).catch(() => ({})),
   ]);
+  // Gemini の音声で読み上げる（セッションが始まってから呼ばれる。失敗したら端末の音声）
+  if (config.tts === true) {
+    voice.fetchAudio = async (text) => (app.token ? (await api('/api/tts', { text })).data : null);
+  }
   const demoCode = typeof config.demoCode === 'string' ? config.demoCode : '';
   app.access = { purchaseEnabled: config.purchaseEnabled === true, demoPublic: config.demoPublic === true && Boolean(demoCode), demoCode };
   app.scenario = scenario;

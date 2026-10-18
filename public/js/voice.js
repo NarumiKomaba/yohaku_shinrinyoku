@@ -1,4 +1,4 @@
-// ブラウザ標準の音声合成 (speechSynthesis) と音声認識 (SpeechRecognition) の薄いラッパー
+// 音声合成と音声認識の薄いラッパー。読み上げは、サーバーの Gemini 音声（fetchAudio）を先に試し、だめならブラウザ標準の音声合成 (speechSynthesis) に切り替える
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 export class Voice {
@@ -9,6 +9,9 @@ export class Voice {
     this.sentencePauseMs = 700; // 文と文の間
     this._pauseCancel = null;
     this.voice = null;
+    this.fetchAudio = null; // async (text) => base64 の WAV。設定すると Gemini の音声で読み上げる（失敗したら端末の音声）
+    this._audio = null;
+    this._remoteOffUntil = 0; // Gemini の音声が失敗したら、しばらく端末の音声だけにする
     this.onSpeak = null; // (chars) => void  利用量ログ用
     this.onError = null; // (errorType, sentence) => void  読み上げ失敗の通知（not-allowed 等）
     this._token = 0;
@@ -16,7 +19,7 @@ export class Voice {
     if (this.synth) this.synth.onvoiceschanged = () => this._pickVoice();
   }
 
-  get canSpeak() { return Boolean(this.synth); }
+  get canSpeak() { return Boolean(this.synth || this.fetchAudio); }
   get canListen() { return Boolean(Recognition); }
 
   setLang(lang) {
@@ -36,16 +39,66 @@ export class Voice {
 
   // iOS/Android ではユーザー操作の中で一度発話させないと以後の自動発話がブロックされる
   unlock() {
+    if (this.fetchAudio) this._unlockAudio();
     if (!this.synth) return;
     const u = new SpeechSynthesisUtterance(' ');
     u.volume = 0;
     this.synth.speak(u);
   }
 
+  // 音声ファイルの再生も、ユーザー操作の中で一度鳴らしておく（無音の短い WAV）
+  _unlockAudio() {
+    try {
+      this._audio ||= new Audio();
+      this._audio.src = URL.createObjectURL(new Blob([silentWav()], { type: 'audio/wav' }));
+      this._audio.play().catch(() => {});
+    } catch { /* 端末の音声に任せる */ }
+  }
+
+  // Gemini の音声で読み上げる。cancel() されたら false、使えなかったら null（端末の音声に切り替える）
+  async _speakRemote(text, token) {
+    if (Date.now() < this._remoteOffUntil) return null;
+    let b64;
+    try {
+      b64 = await this.fetchAudio(text);
+    } catch { b64 = null; }
+    if (token !== this._token) return false;
+    if (!b64) { this._remoteOffUntil = Date.now() + 60_000; return null; }
+    return new Promise((resolve) => {
+      let url;
+      const done = (v) => {
+        this._pendingResolve = null;
+        this._audio.onended = this._audio.onerror = null;
+        URL.revokeObjectURL(url);
+        resolve(v);
+      };
+      try {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+        this._audio ||= new Audio();
+        this._audio.onended = () => done(token === this._token);
+        this._audio.onerror = () => done(token === this._token ? null : false);
+        this._audio.src = url;
+        this._pendingResolve = (ok) => { this._audio.pause(); done(ok); };
+        this._audio.play().catch(() => done(token === this._token ? null : false));
+      } catch {
+        done(null);
+      }
+    });
+  }
+
   // 長文は Chrome で途中停止するため文単位に分割して順に読み上げる。cancel() で中断すると false で resolve。
   async speak(text) {
-    if (!this.synth || !text) return true;
+    if (!text || !(this.synth || this.fetchAudio)) return true;
     const token = ++this._token;
+    if (this.fetchAudio) {
+      const r = await this._speakRemote(String(text), token);
+      if (r !== null) {
+        if (r) this.onSpeak?.(text.length);
+        return r;
+      }
+      if (!this.synth) return true;
+    }
     const sentences = String(text).match(/[^。．！？!?.]+[。．！？!?.]?/g) || [text];
     this.onSpeak?.(text.length);
     for (const s of sentences) {
@@ -144,6 +197,18 @@ export class Voice {
 
 // 静けさの終わりを知らせる、ごく小さな鐘の音（WebAudio）
 let audioCtx;
+// 無音の WAV（0.1 秒・8kHz・16bit モノラル）
+function silentWav() {
+  const data = 1600;
+  const b = new DataView(new ArrayBuffer(44 + data));
+  const w = (o, s) => [...s].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); b.setUint32(4, 36 + data, true); w(8, 'WAVEfmt ');
+  b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);
+  b.setUint32(24, 8000, true); b.setUint32(28, 16000, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true);
+  w(36, 'data'); b.setUint32(40, data, true);
+  return b.buffer;
+}
+
 export function softChime() {
   try {
     audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();

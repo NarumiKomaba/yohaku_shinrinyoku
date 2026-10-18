@@ -2,7 +2,7 @@
 // 担当: implementer-walk
 'use strict';
 
-const { MODEL, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY } = require('../lib/config');
+const { MODEL, TTS_MODEL, TTS_VOICE, TTS_MAX_PER_SESSION, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
 const { getSpots, appendEvents } = require('../lib/store');
 const { readStatic } = require('../lib/static-data');
@@ -80,6 +80,7 @@ function similarity(a, b) {
 }
 const FAST_MPS = 1.8; // これを超えて歩いているときは 1〜2 文にする
 // 1 回の体験で Gemini を使った回数（案内・質問）。上限を超えたら素材だけの案内にする。Map は件数の上限で古いものから消す
+const ttsCounts = new Map();
 const narrateCounts = new Map(); // sessionId -> 回数
 const askCounts = new Map();
 function bump(map, sessionId) {
@@ -286,7 +287,42 @@ function confirmTextFor(lang, v) {
   return `では、${dur}${v.note ? `、${v.note}` : ''}ゆっくり歩きましょう。よろしいですか？`.replace('では、、', 'では、');
 }
 
+// Gemini が返す音声は 16bit・モノラルの PCM（mimeType の rate=24000）。ブラウザで鳴らせるよう WAV にする
+function pcmToWav(pcm, mimeType) {
+  const rate = Number((/rate=(\d+)/.exec(mimeType || '') || [])[1]) || 24000;
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVEfmt ', 8);
+  h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
+  h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
+const TTS_MAX_CHARS = 600;
+
 module.exports = {
+  // 読み上げ用の音声を作る（Gemini の音声合成）。失敗・上限のときはエラーを返し、画面は端末の音声に切り替える
+  'POST /api/tts': async (req) => {
+    const s = walkSession(req);
+    const b = await readBody(req, WALK_BODY_LIMIT);
+    const text = clip(b.text, TTS_MAX_CHARS).trim();
+    if (!text) throw httpError(400, 'empty');
+    if (TTS_MAX_PER_SESSION && bump(ttsCounts, s.sessionId) > TTS_MAX_PER_SESSION) throw httpError(429, 'tts_limit');
+    const t0 = Date.now();
+    try {
+      const { audio, usage } = await callGemini({
+        system: '',
+        contents: [{ role: 'user', parts: [{ text: `Read the following aloud in a calm, warm, unhurried voice, leaving natural pauses between sentences:\n${text}` }] }],
+        speech: { model: TTS_MODEL, voice: TTS_VOICE }, timeoutMs: 15000,
+      });
+      if (!audio) throw new Error('no audio');
+      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'tts', model: TTS_MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 }]);
+      return { mimeType: 'audio/wav', data: pcmToWav(Buffer.from(audio.data, 'base64'), audio.mimeType).toString('base64') };
+    } catch (e) {
+      await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-tts', message: e.message }]);
+      throw httpError(503, 'tts_unavailable');
+    }
+  },
+
   'POST /api/ask': async (req) => {
     const s = walkSession(req);
     const b = await readBody(req, WALK_BODY_LIMIT);
