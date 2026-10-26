@@ -106,7 +106,7 @@ function start() {
   server.listen(cfg.PORT, cfg.HOST, () => {
     console.log(`Digital Nature & Wellness Instructor — http://${cfg.HOST === '0.0.0.0' ? 'localhost' : cfg.HOST}:${cfg.PORT}`);
     console.log('  体験アプリ: /   ガイドさんページ: /guide.html   集計: /admin.html');
-    console.log(`  Gemini: ${cfg.API_KEY ? `key found (${cfg.KEY_SOURCE}), model=${cfg.MODEL}` : 'key NOT found → 素材・Knowledge のみで動作（フォールバック）'}`);
+    console.log(`  Gemini: ${cfg.SERVICE_ACCOUNT_JSON ? `service account key found, model=${cfg.MODEL}` : cfg.API_KEY ? `key found (${cfg.KEY_SOURCE}), model=${cfg.MODEL}` : 'key NOT found → 素材・Knowledge のみで動作（フォールバック）'}`);
     console.log(`  記録: ${cfg.STORE_BACKEND === 'firestore' ? `Firestore ${cfg.FIRESTORE_PROJECT_ID}（envs/${cfg.STORE_NAMESPACE}、Spot は envs/${cfg.SPOTS_NAMESPACE}、認証 ${cfg.FIRESTORE_AUTH}）` : cfg.STORE_BACKEND}`);
     if (cfg.SPOTS_READ_ONLY) console.log(`  Spot（envs/${cfg.SPOTS_NAMESPACE}）: 合言葉が既定か短いので読むだけ（GUIDE_PASSCODE を 16 文字以上にすると保存できる）`);
     // 合言葉と非公開のデモコードは、ログ（Cloud Run ではクラウドに残る）に出さない
