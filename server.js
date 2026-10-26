@@ -96,6 +96,8 @@ function refuseSharedSpotsOnLan() {
   process.exit(1);
 }
 
+const say = (line) => process.stdout.write(`${line}\n`);
+
 function start() {
   refuseIfMisconfigured();
   refuseSharedSpotsOnLan();
@@ -104,13 +106,13 @@ function start() {
   // 最初の体験者が gcloud やメタデータサーバーを待たないよう、先にトークンを取る（失敗しても起動は続ける）
   store.warmUp();
   server.listen(cfg.PORT, cfg.HOST, () => {
-    console.log(`Digital Nature & Wellness Instructor — http://${cfg.HOST === '0.0.0.0' ? 'localhost' : cfg.HOST}:${cfg.PORT}`);
-    console.log('  体験アプリ: /   ガイドさんページ: /guide.html   集計: /admin.html');
-    console.log(`  Gemini: ${cfg.SERVICE_ACCOUNT_JSON ? `service account key found, model=${cfg.MODEL}` : cfg.API_KEY ? `key found (${cfg.KEY_SOURCE}), model=${cfg.MODEL}` : 'key NOT found → 素材・Knowledge のみで動作（フォールバック）'}`);
-    console.log(`  記録: ${cfg.STORE_BACKEND === 'firestore' ? `Firestore ${cfg.FIRESTORE_PROJECT_ID}（envs/${cfg.STORE_NAMESPACE}、Spot は envs/${cfg.SPOTS_NAMESPACE}、認証 ${cfg.FIRESTORE_AUTH}）` : cfg.STORE_BACKEND}`);
-    if (cfg.SPOTS_READ_ONLY) console.log(`  Spot（envs/${cfg.SPOTS_NAMESPACE}）: 合言葉が既定か短いので読むだけ（GUIDE_PASSCODE を 16 文字以上にすると保存できる）`);
+    say(`Digital Nature & Wellness Instructor — http://${cfg.HOST === '0.0.0.0' ? 'localhost' : cfg.HOST}:${cfg.PORT}`);
+    say('  体験アプリ: /   ガイドさんページ: /guide.html   集計: /admin.html');
+    say(`  Gemini: ${cfg.SERVICE_ACCOUNT_JSON ? `service account key found, model=${cfg.MODEL}` : cfg.API_KEY ? `key found (${cfg.KEY_SOURCE}), model=${cfg.MODEL}` : 'key NOT found → 素材・Knowledge のみで動作（フォールバック）'}`);
+    say(`  記録: ${cfg.STORE_BACKEND === 'firestore' ? `Firestore ${cfg.FIRESTORE_PROJECT_ID}（envs/${cfg.STORE_NAMESPACE}、Spot は envs/${cfg.SPOTS_NAMESPACE}、認証 ${cfg.FIRESTORE_AUTH}）` : cfg.STORE_BACKEND}`);
+    if (cfg.SPOTS_READ_ONLY) say(`  Spot（envs/${cfg.SPOTS_NAMESPACE}）: 合言葉が既定か短いので読むだけ（GUIDE_PASSCODE を 16 文字以上にすると保存できる）`);
     // 合言葉と非公開のデモコードは、ログ（Cloud Run ではクラウドに残る）に出さない
-    console.log(`  デモ用購入コード: ${cfg.DEMO_PUBLIC ? cfg.DEMO_CODES.join(', ') : '(設定済み)'}${cfg.PURCHASE_ENABLED ? '' : '   購入: 停止中'}${cfg.LLM_DAILY_MAX ? `   LLM 上限: ${cfg.LLM_DAILY_MAX} 回/日` : ''}   ガイドさん合言葉: ${cfg.GUIDE_PASSCODE_IS_DEFAULT ? `${cfg.GUIDE_PASSCODE}（既定）` : '(設定済み)'}`);
+    say(`  デモ用購入コード: ${cfg.DEMO_PUBLIC ? cfg.DEMO_CODES.join(', ') : '(設定済み)'}${cfg.PURCHASE_ENABLED ? '' : '   購入: 停止中'}${cfg.LLM_DAILY_MAX ? `   LLM 上限: ${cfg.LLM_DAILY_MAX} 回/日` : ''}   ガイドさん合言葉: ${cfg.GUIDE_PASSCODE_IS_DEFAULT ? `${cfg.GUIDE_PASSCODE}（既定）` : '(設定済み)'}`);
     if (!isLocalHost(cfg.HOST)) {
       if (cfg.GUIDE_PASSCODE_IS_DEFAULT) console.warn('  ⚠ 外部から接続できる状態で既定の合言葉を使っています。GUIDE_PASSCODE を設定してください。');
       if (cfg.PURCHASE_ENABLED) console.warn('  ⚠ 外部から接続できる状態で購入（モック）が有効です。誰でもコードを発行できます。PURCHASE_ENABLED=0 を設定してください。');
