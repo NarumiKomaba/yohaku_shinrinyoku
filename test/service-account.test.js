@@ -63,3 +63,15 @@ test('callGemini_withServiceAccount_callsVertexWithBearerToken', async () => {
   assert.equal(call.opts.headers.Authorization, 'Bearer tok-abc');
   assert.ok(!call.url.includes('key='));
 });
+
+test('callGemini_whenVertexFails_keepsFirstEndpointError', async () => {
+  globalThis.fetch = async (url) => {
+    if (String(url).startsWith('https://oauth2.googleapis.com/')) return json({ access_token: 'tok-abc', expires_in: 3600 });
+    return json({ error: { message: 'permission denied' } }, 403);
+  };
+  try {
+    await assert.rejects(callGemini({ system: 's', contents: [{ role: 'user', parts: [{ text: 'q' }] }] }), /vertex-service-account 403: permission denied/);
+  } finally {
+    globalThis.fetch = h.realFetch;
+  }
+});

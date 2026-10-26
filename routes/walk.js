@@ -321,7 +321,8 @@ module.exports = {
       await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'tts', model: TTS_MODEL, ...usage, costJpy: costJpy(usage, 'tts'), latencyMs: Date.now() - t0 }]);
       const raw = Buffer.from(audio.data, 'base64');
       // 3.x は RIFF ヘッダー付きの WAV で返る。ヘッダーなしの PCM（2.5・AUDIO_L16）だけ WAV にする
-      const wav = raw.subarray(0, 4).toString() === 'RIFF' ? raw : pcmToWav(raw, audio.mimeType);
+      const isWav = raw.subarray(0, 4).toString() === 'RIFF' || /^audio\/(x-)?wav\b/i.test(audio.mimeType || '');
+      const wav = isWav ? raw : pcmToWav(raw, audio.mimeType);
       return { mimeType: 'audio/wav', data: wav.toString('base64') };
     } catch (e) {
       if (e.code !== 'tts_daily_limit') await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-tts', message: e.message }]);

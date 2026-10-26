@@ -82,6 +82,18 @@
 
 `LLM_DAILY_MAX` はメモリで数えるため、再起動や複数インスタンスでは正確な上限になりません。確実な上限は、GCP の Generative Language API のクォータ（1 日のリクエスト数）で設定してください（Vertex AI Express のキー `AQ.` を使う場合は、Vertex AI 側のクォータ）。
 
+### Vertex AI をサービスアカウントで使う
+
+| 変数 | 効果 |
+|---|---|
+| `GEMINI_SA_JSON` | サービスアカウントの鍵（JSON の文字列。旧名 `GEMINI_SERVICE_ACCOUNT_JSON` も可）。`--set-secrets` で Secret Manager から渡す。設定すると `GEMINI_API_KEY` より優先して、Vertex AI をその鍵のトークンで呼ぶ |
+| `GEMINI_VERTEX_PROJECT` | Vertex AI のプロジェクト。未設定なら鍵の `project_id` |
+| `GEMINI_VERTEX_LOCATION` | 場所。既定 `global`（`us-central1` など） |
+
+- 切り替え：`GEMINI_SA_JSON` を設定すると Vertex、外すと `GEMINI_API_KEY` に戻る。サービスアカウントには「Vertex AI ユーザー」の権限が要る
+- 音声が `audio/wav`（または RIFF ヘッダー付き）で返ったときは包み直さずそのまま使う。ヘッダーなしの PCM だけ WAV にする
+- 呼び出しが失敗したときのログには、最初に試したエンドポイントのエラーを残す
+
 ### アプリ側の守り（公開時）
 
 - **総当たり対策**: `/api/session`（コード）と `/api/guide/login`（合言葉）は、同じ接続元（IPv4 はアドレス、IPv6 は /64）から 10 分で 10 回、または全体で 200 回失敗すると 429 を返す。同時に送っても上限を超えない。失敗はログに `[auth] invalid ...` と IP だけを残す（入力された値は残さない）

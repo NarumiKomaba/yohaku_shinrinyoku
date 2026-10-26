@@ -58,6 +58,9 @@ Gemini API キーは Windows のユーザー環境変数から自動的に読み
 | 変数 | 既定値 | 説明 |
 |---|---|---|
 | `GEMINI_API_KEY` | — | Gemini API キー。Windows ユーザー環境変数に設定（プロセス環境変数で上書き可） |
+| `GEMINI_SA_JSON` | — | サービスアカウントの鍵（JSON の文字列。旧名 `GEMINI_SERVICE_ACCOUNT_JSON` も可）。設定すると API キーより優先して、Vertex AI をその鍵のトークンで呼ぶ。外すと API キーに戻る |
+| `GEMINI_VERTEX_PROJECT` | 鍵の `project_id` | Vertex AI のプロジェクト |
+| `GEMINI_VERTEX_LOCATION` | `global` | Vertex AI の場所（`us-central1` など） |
 | `NODE_ENV` | — | `production` にすると公開用の設定を確かめ、足りなければ起動しない（Cloud Run の `K_SERVICE` があるときも同じ扱い。docs/OPERATIONS.md） |
 | `GUIDE_PASSCODE` | `GAIEN-GUIDE` | ガイドさんページと集計ページのログイン合言葉。起動ログには値を出さない（既定値のときだけ表示） |
 | `DEMO_CODES` | `DEMO2027` | デモ用購入コード（複数指定時はカンマ区切り）。初期値以外にすると、画面にコードを表示せず「デモで試す」も入力したコードを使う |
