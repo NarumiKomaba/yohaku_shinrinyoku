@@ -44,6 +44,13 @@ test('tts_withText_returnsWavFromGeminiAudio', async () => {
   assert.match(part.speech_metadata.style, /calm/);
 });
 
+test('tts_generationConfig_hasOnlyModalitiesAndSpeechConfig', async () => {
+  const sess = await h.newSession(srv.base);
+  const stub = stubAudio(okAudio);
+  await post(sess, { text: 'こんにちは。' });
+  assert.deepEqual(Object.keys(stub.bodies[0].generationConfig).sort(), ['responseModalities', 'speechConfig']);
+});
+
 test('tts_whenGeminiReturnsWav_passesItThrough', async () => {
   const sess = await h.newSession(srv.base);
   const wavIn = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(40, 2)]);
