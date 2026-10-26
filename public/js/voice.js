@@ -195,7 +195,6 @@ export class Voice {
   }
 }
 
-// 静けさの終わりを知らせる、ごく小さな鐘の音（WebAudio）
 let audioCtx;
 // 無音の WAV（0.1 秒・8kHz・16bit モノラル）
 function silentWav() {
@@ -209,6 +208,7 @@ function silentWav() {
   return b.buffer;
 }
 
+// 静けさの終わりを知らせる、ごく小さな鐘の音（WebAudio）
 export function softChime() {
   try {
     audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
