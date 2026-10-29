@@ -165,6 +165,7 @@ export class WalkEngine extends EventTarget {
     this._interrupt();
     this._leaveSpot(true);
     this.queue = this._closingSteps();
+    this._emit('finishing', {});
     this._loop();
   }
 

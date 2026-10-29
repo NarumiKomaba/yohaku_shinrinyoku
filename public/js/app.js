@@ -235,7 +235,8 @@ const vcApply = (res) => {
 };
 
 async function startVoiceCheckin() {
-  if (!voice.canListen || !voice.canSpeak) return; // マイクが使えなければチップのみ
+  if (!voice.canSpeak) return;
+  if (!voice.canListen) return readCheckinQuestions(); // マイクが使えない端末（iPhone の Safari・アプリ内ブラウザなど）では、質問を読み上げてチップで答えてもらう
   vc = {
     voice, S, cancelled: false, onButton: null, cancelHook: null,
     say: (text) => { $('#vc-caption').textContent = text; return voice.speak(text); },
@@ -275,6 +276,18 @@ async function startVoiceCheckin() {
   if (vc !== mine || result === 'cancelled') return;
   if (result === 'done') finishCheckin('voice');
   else { $('#vc').hidden = true; mine.cancel(); } // 声での聞き取りが難しいときは、チップで続ける
+}
+// 聞き取りができない端末: チップの質問を順に読む（チップを選ぶ・書くを始めたら止める）
+async function readCheckinQuestions() {
+  const mine = {
+    cancelled: false,
+    cancel() { this.cancelled = true; voice.cancel(); },
+  };
+  vc = mine;
+  for (const key of ['checkinState', 'checkinDesire', 'checkinDuration']) {
+    if (mine.cancelled) return;
+    await voice.speak(S()[key]);
+  }
 }
 $('#vc-yes').addEventListener('click', () => vc?.onButton?.('yes'));
 $('#vc-fix').addEventListener('click', () => vc?.onButton?.('fix'));
@@ -409,6 +422,8 @@ function bindEngine(engine) {
     renderActivity();
   });
   engine.addEventListener('listen', ({ detail }) => { $('#listen-cue').hidden = !detail.on; });
+  // 聞き取りが使えない端末では、自動で聞けないことを短く伝える
+  $('#listen-note').hidden = voice.canListen;
   // 区切りで自動で聞いた声は、質問として扱う（話す速さの指示は ask() 内で端末内に処理）
   engine.addEventListener('heard', async ({ detail }) => {
     if (!app.engine || app.engine.ended) return;
@@ -434,6 +449,7 @@ function bindEngine(engine) {
       : n.distance == null ? '' : `${S().nextSpot}: ${tr(n.spot.name)}  ${n.distance} m`;
   });
 
+  engine.addEventListener('finishing', goReflect);
   engine.addEventListener('finished', ({ detail }) => {
     app.finishedInfo = detail;
     stopTracking();
@@ -598,6 +614,8 @@ $('#end-yes').addEventListener('click', () => {
   $('#end-confirm').hidden = true;
   app.engine?.finish();
 });
+// 終えると決めたら、締めの言葉を読み終わるのを待たずに、すぐふりかえりの画面へ
+function goReflect() { show('screen-reflect'); }
 
 // ポケットモード: 長押しで解除
 const openPocket = () => { $('#pocket').hidden = false; requestWakeLock(); };

@@ -47,3 +47,17 @@ test('i18n_values_areNonEmptyAndSameTypeAcrossLanguages', async () => {
     }
   }
 });
+
+test('endYes_onClick_showsReflectScreenOnFinishing', () => {
+  const app = fs.readFileSync(path.join(JS_DIR, 'app.js'), 'utf8');
+  assert.match(app, /\$\('#end-yes'\)\.addEventListener\('click', \(\) => \{[^}]*app\.engine\?\.finish\(\)/);
+  assert.match(app, /addEventListener\('finishing', goReflect\)/);
+  assert.match(app, /function goReflect\(\) \{ show\('screen-reflect'\); \}/);
+});
+
+test('i18n_shortButtonLabels_areShort', async () => {
+  const { STRINGS } = await import(pathToFileURL(path.join(JS_DIR, 'i18n.js')).href);
+  assert.equal(STRINGS.ja.autoListenOn, '聞き取り: オン');
+  assert.equal(STRINGS.en.autoListenOff, 'Listen: off');
+  for (const l of ['ja', 'en']) for (const k of ['typeInstead', 'pocket', 'rateLabel']) assert.ok(STRINGS[l][k].length <= 8, `${l}.${k}`);
+});

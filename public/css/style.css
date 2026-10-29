@@ -80,16 +80,17 @@ legend { font-weight: 600; padding: 0 6px; }
 .prep { padding-left: 1.3em; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 
 /* ---- Walk ---- */
-.walk-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; }
+.walk-center { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; }
 .status { font-size: 1.8rem; margin: 0; font-weight: 300; }
 .hint { color: var(--dark-muted); margin: 0; min-height: 1.7em; }
 .spot { color: #a9c7a4; margin: 6px 0 0; }
-.caption { color: var(--dark-ink); font-size: 1.3rem; line-height: 1.8; text-align: center; margin: 12px 0 0; max-width: 100%; transition: opacity 1.2s; white-space: pre-line; }
+.caption { color: var(--dark-ink); font-size: 1.3rem; line-height: 1.8; text-align: left; align-self: stretch; max-height: 22dvh; overflow-y: auto; margin: 12px 0 0; max-width: 100%; transition: opacity 1.2s; white-space: pre-line; }
 .caption.faded { opacity: .3; }
 .next { text-align: center; color: var(--dark-muted); font-size: .85rem; margin: 0; }
 .btn.back { border-color: #7fae7a; color: #cfe3cb; margin-top: 16px; padding: 16px 32px; }
 
-.listen-cue { margin: 0; font-size: .9rem; color: #a9c7a4; }
+.listen-cue { margin: 0; font-size: 1rem; color: #cfe3cb; }
+.listen-cue::before { content: '● '; color: #c9772f; animation: breathe 1.2s ease-in-out infinite; }
 .sub-controls { flex-wrap: wrap; gap: 4px 12px; }
 .status.breathing { animation: breathe 10s ease-in-out infinite; }
 @keyframes breathe { 0%, 100% { opacity: .45; } 40% { opacity: 1; } }

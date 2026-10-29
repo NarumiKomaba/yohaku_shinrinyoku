@@ -198,7 +198,11 @@ export class Voice {
   }
 
   stopListening() {
-    this._recognizer?.stop();
+    const r = this._recognizer;
+    if (!r) return;
+    r.stop();
+    // iPhone などで onend が来ないと聞き取りが終わらず、後の進行が止まるため、少し待って終わらせる
+    setTimeout(() => { if (this._recognizer === r) r.onend?.(); }, 1500);
   }
 }
 
@@ -239,13 +243,14 @@ export function softChime() {
 export function listenCue() {
   try {
     audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume();
     const t = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'sine';
     osc.frequency.value = 1046;
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.02, t + 0.02);
+    gain.gain.linearRampToValueAtTime(0.06, t + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(t);
