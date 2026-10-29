@@ -1,12 +1,13 @@
 'use strict';
 // Gemini の音声合成（/api/tts）。fetch は googleapis 宛だけスタブし、実 Gemini は呼ばない
-const { test, before, after } = require('node:test');
+const { test, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./_helper');
 
 h.setupEnv({ key: 'test-key-not-real', extraEnv: { TTS_MAX_PER_SESSION: '2' } });
 let srv;
 before(async () => { srv = await h.startServer(); });
+beforeEach(() => { require('../routes/walk')._test.clearTtsCache(); });
 after(async () => { await srv.close(); globalThis.fetch = h.realFetch; });
 
 const PCM = Buffer.alloc(480, 1);
@@ -100,4 +101,79 @@ test('tts_dailyQuota_isSeparateFromConversationQuota', () => {
   assert.equal(g._test.takeTtsQuota(), false);
   assert.equal(g._test.takeDailyQuota(), true);
   g._test.resetDaily();
+});
+
+test('tts_sameTextTwice_reusesAudioWithoutCallingGeminiOrCounting', async () => {
+  const sess = await h.newSession(srv.base);
+  const stub = stubAudio(okAudio);
+  const a = await post(sess, { text: 'おはようございます。' });
+  const b = await post(sess, { text: 'おはようございます。' });
+  const c = await post(sess, { text: 'おはようございます。' });
+  assert.equal(stub.bodies.length, 1);
+  assert.deepEqual(b.json, a.json);
+  assert.deepEqual(c.json, a.json);
+  // 使い回しは 1 人あたりの回数（上限 2）に入らない：違う文があと 1 回作れる
+  assert.equal((await post(sess, { text: 'ちがう文。' })).status, 200);
+  assert.equal(stub.bodies.length, 2);
+  assert.equal((await post(sess, { text: 'さらに別の文。' })).status, 429);
+  assert.equal((await post(sess, { text: 'おはようございます。' })).status, 200);
+});
+
+test('tts_reusedAudio_doesNotWriteUsageOrTakeDailyQuota', async () => {
+  const g = require('../lib/gemini');
+  g._test.resetDaily();
+  const sess = await h.newSession(srv.base);
+  stubAudio(okAudio);
+  await post(sess, { text: '使い回しの文。' });
+  for (let i = 0; i < 2999; i++) g._test.takeTtsQuota(); // 1 日の枠を残り 0 に
+  assert.equal(g._test.takeTtsQuota(), false);
+  assert.equal((await post(sess, { text: '使い回しの文。' })).status, 200); // 当たれば枠がなくても返る
+  assert.equal((await post(sess, { text: '新しい文。' })).status, 503); // 作り直しは枠が要る
+  g._test.resetDaily();
+});
+
+test('tts_cacheKey_differsByText', async () => {
+  const sess = await h.newSession(srv.base);
+  const stub = stubAudio(okAudio);
+  await post(sess, { text: 'あ。' });
+  await post(sess, { text: 'い。' });
+  assert.equal(stub.bodies.length, 2);
+});
+
+test('tts_failedAudio_isNotCached', async () => {
+  const sess = await h.newSession(srv.base);
+  stubAudio(() => new Response('{}', { status: 500 }));
+  assert.equal((await post(sess, { text: '失敗する文。' })).status, 503);
+  assert.equal(require('../routes/walk')._test.ttsCacheStats().entries, 0);
+});
+
+test('tts_cacheOverEntryLimit_evictsOldestFirst', async () => {
+  const t = require('../routes/walk')._test;
+  const big = { entries: 200, bytes: 32 * 1024 * 1024 };
+  t.setTtsCacheLimits({ entries: 2 });
+  try {
+    const sess = await h.newSession(srv.base);
+    const stub = stubAudio(okAudio);
+    for (const x of ['A。', 'B。', 'C。']) await h.api(srv.base, 'POST', '/api/tts', { headers: (await h.newSession(srv.base)).headers, body: { text: x } });
+    assert.equal(stub.bodies.length, 3);
+    assert.equal(t.ttsCacheStats().entries, 2);
+    await post(sess, { text: 'C。' }); // 残っている
+    assert.equal(stub.bodies.length, 3);
+    await post(sess, { text: 'A。' }); // いちばん古いので消えている
+    assert.equal(stub.bodies.length, 4);
+  } finally { t.setTtsCacheLimits(big); }
+});
+
+test('tts_cacheOverByteLimit_evictsOldestUntilUnderLimit', async () => {
+  const t = require('../routes/walk')._test;
+  const big = { entries: 200, bytes: 32 * 1024 * 1024 };
+  const wavB64 = Math.ceil((44 + PCM.length) / 3) * 4;
+  t.setTtsCacheLimits({ bytes: wavB64 * 2 + 1 }); // 2 件ぶんまで
+  try {
+    stubAudio(okAudio);
+    for (const x of ['A。', 'B。', 'C。']) await h.api(srv.base, 'POST', '/api/tts', { headers: (await h.newSession(srv.base)).headers, body: { text: x } });
+    const st = t.ttsCacheStats();
+    assert.equal(st.entries, 2);
+    assert.ok(st.bytes <= wavB64 * 2 + 1);
+  } finally { t.setTtsCacheLimits(big); }
 });
