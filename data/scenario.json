@@ -39,16 +39,16 @@
   "silenceChime": true,
   "opening": {
     "ja": [
-      "ようこそ。これから、皇居外苑をゆっくり歩きます。",
-      "画面は見なくて大丈夫です。スマートフォンはポケットにしまってください。",
-      "私はたくさんは話しません。ときどき声をかけて、ときどき黙ります。",
-      "まず、鼻から四つ数えて吸って、口から六つ数えて吐きます。これを三回、自分のペースで。"
+      "ようこそ。これから、皇居外苑をのんびり歩きましょう。",
+      "画面は見なくて大丈夫ですよ。スマートフォンは、ポケットにしまっておいてくださいね。",
+      "私はあまりしゃべりすぎないようにしますね。ときどき声をかけるので、それ以外は静かな時間を楽しんでください。",
+      "まず、鼻から四つ数えながら吸って、口から六つ数えながら吐きます。これを三回、自分のペースでやってみましょう。"
     ],
     "en": [
-      "Welcome. We will walk slowly through Kokyo Gaien together.",
+      "Welcome. Let's take a slow walk through Kokyo Gaien together.",
       "You don't need the screen. Please put your phone in your pocket.",
-      "I won't talk much. Sometimes I will speak, and sometimes I will stay quiet.",
-      "First, breathe in through your nose for four counts, and out through your mouth for six. Three times, at your own pace."
+      "I'll try not to talk too much. I'll check in now and then, and the rest of the time, just enjoy the quiet.",
+      "First, breathe in through your nose for four counts, then out through your mouth for six. Do that three times, at your own pace."
     ]
   },
   "checkin": {
@@ -60,8 +60,8 @@
           "en": "Mentally tired"
         },
         "cue": {
-          "ja": "頭が疲れているときは、遠くを見ることから。今日は景色の広さをたくさん使いましょう。",
-          "en": "When the mind is tired, looking far away helps. Today we'll use the wide views a lot."
+          "ja": "頭が疲れているときは、まず遠くを見てみましょう。今日は、広い景色をたっぷり眺めますね。",
+          "en": "When your mind is tired, looking far away helps. Today, let's enjoy the wide views."
         },
         "prefer": [
           "LOOK"
@@ -74,7 +74,7 @@
           "en": "Physically tired"
         },
         "cue": {
-          "ja": "体が疲れているなら、急ぐ必要はありません。休みたくなったら、いつでも立ち止まってください。",
+          "ja": "体が疲れているときは、急がなくて大丈夫です。休みたくなったら、いつでも立ち止まってくださいね。",
           "en": "If your body is tired, there's no need to hurry. Stop and rest whenever you like."
         },
         "prefer": [
@@ -89,8 +89,8 @@
           "en": "Feeling low"
         },
         "cue": {
-          "ja": "気分が重い日は、何かを頑張らなくていい日です。聞こえてくる音に任せてみましょう。",
-          "en": "On a heavy day, you don't need to try hard. Let the sounds around you carry you."
+          "ja": "気分が重い日は、無理にがんばらなくていいんですよ。聞こえてくる音に、身をまかせてみましょう。",
+          "en": "On a heavy day, you don't have to try hard. Just let the sounds around you carry you."
         },
         "prefer": [
           "LISTEN"
@@ -103,8 +103,8 @@
           "en": "Feeling fine"
         },
         "cue": {
-          "ja": "元気な日は、足の裏の感覚に注意を向けながら、気持ちよく歩きましょう。",
-          "en": "On a good day, let's walk pleasantly while paying attention to the soles of your feet."
+          "ja": "元気な日は、足の裏の感覚を感じながら、気持ちよく歩きましょう。",
+          "en": "On a good day, let's enjoy the walk and notice how your feet feel on the ground."
         },
         "prefer": [
           "WALK"
@@ -195,21 +195,21 @@
     },
     "LISTEN": {
       "ja": [
-        "いちばん遠くから聞こえる音を探してみてください。",
-        "鳥の声、風の音、人の足音。いくつの音が聞こえるか、数えてみましょう。",
-        "右から聞こえる音と、左から聞こえる音。その違いに耳を向けてください。"
+        "いちばん遠くから聞こえる音を探してみましょう。",
+        "鳥の声、風の音、人の足音。いくつ聞こえるか、数えてみましょう。",
+        "右から聞こえる音と、左から聞こえる音。違いに耳をすませてみてください。"
       ],
       "en": [
         "Try to find the most distant sound you can hear.",
-        "Birds, wind, footsteps. How many different sounds can you count?",
-        "Notice the sounds on your right, and the sounds on your left."
+        "Birds, wind, footsteps. How many different sounds can you hear?",
+        "Listen to the sounds on your right, and then the sounds on your left."
       ]
     },
     "WALK": {
       "ja": [
         "足の裏が地面に触れる感覚を感じながら歩きましょう。かかと、土踏まず、つま先。",
-        "歩く速さを、いまの半分くらいにしてみてください。",
-        "砂利の音、土の柔らかさ。足もとから伝わるものを感じながら進みましょう。"
+        "歩く速さを、いまの半分くらいにしてみましょう。",
+        "砂利の音や、土のやわらかさ。足もとから伝わってくるものを感じながら歩きましょう。"
       ],
       "en": [
         "Walk while feeling your soles touch the ground. Heel, arch, toes.",
@@ -220,17 +220,17 @@
     "STOP": {
       "ja": [
         "ここで一度、立ち止まりましょう。両足に体重が乗っているのを感じてください。",
-        "足を止めて、ひと呼吸。いま、どんな景色の中にいるでしょうか。"
+        "足を止めて、ひと呼吸。いま、どんな景色の中にいるか、見てみましょう。"
       ],
       "en": [
         "Let's stop here for a moment. Feel your weight resting on both feet.",
-        "Stop, and take one breath. What kind of scene are you standing in right now?"
+        "Stop and take a breath. What does the view around you look like right now?"
       ]
     },
     "REST": {
       "ja": [
         "座れる場所があれば、少し腰を下ろしましょう。肩の力を、ふっと抜いてください。",
-        "休憩しましょう。急ぐ理由は、いまはひとつもありません。"
+        "ひと休みしましょう。いまは、急ぐ理由はひとつもありませんよ。"
       ],
       "en": [
         "If there's a place to sit, sit down for a while. Let your shoulders drop.",
@@ -239,19 +239,19 @@
     },
     "SILENCE": {
       "ja": [
-        "ここから少し、案内を休みます。イヤホンを少し外して、周りの音を聞いてみてください。",
-        "しばらく私は黙ります。好きなだけ、この場所にいてください。"
+        "ここから少しのあいだ、お話をお休みしますね。イヤホンを片方外して、まわりの音を聞いてみてください。",
+        "しばらく静かにしていますね。好きなだけ、ここでゆっくり過ごしてください。"
       ],
       "en": [
-        "I'll pause the guidance for a while. Take out one earbud and listen to what's around you.",
-        "I'll be quiet for a while. Stay here as long as you like."
+        "I'll pause for a little while. Take out one earbud and listen to the sounds around you.",
+        "I'll be quiet for a bit. Take all the time you like here."
       ]
     }
   },
   "timeUp": {
     "text": {
-      "ja": "予定の時間になりました。ここで終えますか、もう少し歩きますか？",
-      "en": "Your planned time is up. Would you like to finish here, or walk a little longer?"
+      "ja": "予定の時間になりました。ここで終わりにしますか？それとも、もう少し歩きますか？",
+      "en": "Your time is up. Would you like to finish here, or walk a little longer?"
     },
     "options": [
       {
@@ -276,13 +276,13 @@
   },
   "walkCues": {
     "ja": [
-      "肩が上がっていないか、そっと確かめてみてください。",
-      "次の場所まで、呼吸に合わせて歩きましょう。四歩で吸って、六歩で吐く。",
+      "肩に力が入っていないか、そっと確かめてみてください。",
+      "次の場所まで、呼吸に合わせて歩きましょう。四歩で吸って、六歩で吐きます。",
       "視線を少し上げて、木々の高さを感じながら歩きましょう。",
-      "いま聞こえている音に、ひとつだけ名前をつけてみてください。"
+      "いま聞こえている音に、ひとつだけ名前をつけてみましょう。"
     ],
     "en": [
-      "Gently check whether your shoulders have crept up.",
+      "Gently check whether your shoulders have tensed up.",
       "Walk to the next place in rhythm with your breath. In for four steps, out for six.",
       "Lift your gaze a little and feel the height of the trees as you walk.",
       "Give a name to just one sound you can hear right now."
@@ -290,9 +290,9 @@
   },
   "closing": {
     "ja": [
-      "今日の歩みは、ここでひと区切りです。",
-      "最後に、もう一度だけ深く息を吐いてください。",
-      "歩き始める前と比べて、何か変わったことはありますか。答えは、この後の画面で、あなたの言葉で残してください。"
+      "今日の散歩は、ここでひと区切りです。",
+      "最後に、もう一度だけ、深く息を吐いてください。",
+      "歩き始める前と比べて、何か変わったことはありましたか？答えは、このあとの画面で、あなたの言葉で残してくださいね。"
     ],
     "en": [
       "This is where today's walk comes to a close.",
@@ -346,7 +346,7 @@
       "en": [
         "Now, let's walk on to the next place.",
         "Thank you. Let's start walking again.",
-        "Shall we walk on."
+        "Shall we walk on?"
       ]
     },
     "preview": {

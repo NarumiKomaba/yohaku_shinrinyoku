@@ -1,6 +1,7 @@
 // 体験中の AI: 自由質問 (/api/ask) と、その場で案内を組み立てる (/api/narrate)
 // 担当: implementer-walk
 'use strict';
+const crypto = require('node:crypto');
 
 const { MODEL, TTS_MODEL, TTS_VOICE, TTS_STYLE, TTS_MAX_PER_SESSION, LOG_QUESTION_TEXT, NARRATE_MAX_PER_SESSION, ASK_MAX_PER_SESSION, WALK_CALLS_PER_MIN, WALK_CALLS_PER_DAY } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
@@ -298,6 +299,28 @@ function pcmToWav(pcm, mimeType) {
 }
 const TTS_MAX_CHARS = 600;
 
+// 同じ文・声・雰囲気・モデルの音声は作り直さず使い回す（メモリ。件数と合計の大きさに上限。古いものから消す）
+const ttsCache = new Map(); // key -> { mimeType, data }
+const ttsCacheLimits = { entries: 200, bytes: 32 * 1024 * 1024 };
+let ttsCacheBytes = 0;
+const ttsKey = (text) => crypto.createHash('sha256').update(JSON.stringify([text, TTS_VOICE, TTS_STYLE, TTS_MODEL])).digest('hex');
+function ttsCacheGet(key) {
+  const v = ttsCache.get(key);
+  if (v) { ttsCache.delete(key); ttsCache.set(key, v); } // 新しい側へ
+  return v;
+}
+function ttsCachePut(key, v) {
+  const old = ttsCache.get(key);
+  if (old) { ttsCacheBytes -= old.data.length; ttsCache.delete(key); }
+  ttsCache.set(key, v);
+  ttsCacheBytes += v.data.length;
+  while (ttsCache.size > 0 && (ttsCache.size > ttsCacheLimits.entries || ttsCacheBytes > ttsCacheLimits.bytes)) {
+    const [k, ov] = ttsCache.entries().next().value;
+    ttsCache.delete(k);
+    ttsCacheBytes -= ov.data.length;
+  }
+}
+
 module.exports = {
   // 読み上げ用の音声を作る（Gemini の音声合成）。失敗・上限のときはエラーを返し、画面は端末の音声に切り替える
   'POST /api/tts': async (req) => {
@@ -305,6 +328,9 @@ module.exports = {
     const b = await readBody(req, WALK_BODY_LIMIT);
     const text = clip(b.text, TTS_MAX_CHARS).trim();
     if (!text) throw httpError(400, 'empty');
+    const key = ttsKey(text);
+    const hit = ttsCacheGet(key);
+    if (hit) return { mimeType: hit.mimeType, data: hit.data }; // 使い回し：Gemini を呼ばず、回数にも上限にも数えない
     if (bump(ttsCounts, s.sessionId) > TTS_MAX_PER_SESSION) throw httpError(429, 'tts_limit');
     const t0 = Date.now();
     try {
@@ -323,7 +349,9 @@ module.exports = {
       // 3.x は RIFF ヘッダー付きの WAV で返る。ヘッダーなしの PCM（2.5・AUDIO_L16）だけ WAV にする
       const isWav = raw.subarray(0, 4).toString() === 'RIFF' || /^audio\/(x-)?wav\b/i.test(audio.mimeType || '');
       const wav = isWav ? raw : pcmToWav(raw, audio.mimeType);
-      return { mimeType: 'audio/wav', data: wav.toString('base64') };
+      const out = { mimeType: 'audio/wav', data: wav.toString('base64') };
+      ttsCachePut(key, out);
+      return { ...out };
     } catch (e) {
       if (e.code !== 'tts_daily_limit') await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-tts', message: e.message }]);
       throw httpError(503, 'tts_unavailable');
@@ -439,3 +467,12 @@ module.exports = {
     return result;
   },
 };
+// テスト用（使い回しの上限を小さくして確かめる）
+Object.defineProperty(module.exports, '_test', {
+  value: {
+    clearTtsCache: () => { ttsCache.clear(); ttsCacheBytes = 0; },
+    ttsCacheStats: () => ({ entries: ttsCache.size, bytes: ttsCacheBytes }),
+    setTtsCacheLimits: (l) => Object.assign(ttsCacheLimits, l),
+  },
+  enumerable: false,
+});

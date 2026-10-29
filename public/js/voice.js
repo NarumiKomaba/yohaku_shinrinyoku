@@ -11,6 +11,7 @@ export class Voice {
     this.voice = null;
     this.fetchAudio = null; // async (text) => base64 の WAV。設定すると Gemini の音声で読み上げる（失敗したら端末の音声）
     this._audio = null;
+    this._audioCache = new Map(); // 同じ文の音声（base64）は同じ体験の中で取り直さない。50 件まで、古いものから消す
     this._remoteOffUntil = 0; // Gemini の音声が失敗したら、しばらく端末の音声だけにする
     this.onSpeak = null; // (chars) => void  利用量ログ用
     this.onError = null; // (errorType, sentence) => void  読み上げ失敗の通知（not-allowed 等）
@@ -58,10 +59,16 @@ export class Voice {
   // Gemini の音声で読み上げる。cancel() されたら false、使えなかったら null（端末の音声に切り替える）
   async _speakRemote(text, token) {
     if (Date.now() < this._remoteOffUntil) return null;
-    let b64;
-    try {
-      b64 = await this.fetchAudio(text);
-    } catch { b64 = null; }
+    let b64 = this._audioCache.get(text);
+    if (!b64) {
+      try {
+        b64 = await this.fetchAudio(text);
+      } catch { b64 = null; }
+      if (b64) {
+        this._audioCache.set(text, b64);
+        if (this._audioCache.size > 50) this._audioCache.delete(this._audioCache.keys().next().value);
+      }
+    }
     if (token !== this._token) return false;
     if (!b64) { this._remoteOffUntil = Date.now() + 60_000; return null; }
     return new Promise((resolve) => {
