@@ -2,7 +2,8 @@
 'use strict';
 
 const crypto = require('crypto');
-const { MODEL, API_KEY, DEMO_CODES, DEMO_PUBLIC, DEFAULT_DEMO_CODE, PURCHASE_ENABLED, SESSIONS_PER_CODE_DAILY, SESSIONS_PER_IP_DAILY, TRUSTED_PROXY_HOPS, STATS_MAX_DOCS, STATS_CACHE_SEC } = require('../lib/config');
+const { enabled: geminiEnabled } = require('../lib/gemini');
+const { MODEL, DEMO_CODES, DEMO_PUBLIC, DEFAULT_DEMO_CODE, PURCHASE_ENABLED, SESSIONS_PER_CODE_DAILY, SESSIONS_PER_IP_DAILY, TRUSTED_PROXY_HOPS, STATS_MAX_DOCS, STATS_CACHE_SEC } = require('../lib/config');
 const { readBody, httpError } = require('../lib/http');
 const { getSpots, appendEvents, listEvents, listPurchases, createPurchase, getPurchase, markPurchaseUsed } = require('../lib/store');
 const { PURCHASE_CODE_RE } = require('../lib/store/common');
@@ -130,7 +131,7 @@ async function findPurchase(ip, c) {
 
 module.exports = {
   // demoCode は公開してよいとき（初期値のデモコードだけのとき）だけ返す
-  'GET /api/config': () => ({ llm: Boolean(API_KEY), model: MODEL, purchaseEnabled: PURCHASE_ENABLED, demoPublic: DEMO_PUBLIC, ...(DEMO_PUBLIC ? { demoCode: DEFAULT_DEMO_CODE } : {}) }),
+  'GET /api/config': () => ({ llm: geminiEnabled(), tts: geminiEnabled(), model: MODEL, purchaseEnabled: PURCHASE_ENABLED, demoPublic: DEMO_PUBLIC, ...(DEMO_PUBLIC ? { demoCode: DEFAULT_DEMO_CODE } : {}) }),
 
   'GET /api/data/:name': (req, params) => {
     if (!Object.hasOwn(DATA_FILES, params.name)) throw httpError(404, 'not found');

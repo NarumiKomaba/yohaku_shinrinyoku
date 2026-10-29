@@ -97,3 +97,17 @@ test('speak_emptyText_resolvesTrueImmediately', async () => {
   const v = new Voice();
   assert.equal(await v.speak(''), true);
 });
+
+test('speak_withFetchAudio_failure_fallsBackToSpeechSynthesis', async () => {
+  spokenByUtterance.length = 0;
+  const v = new Voice();
+  v.fetchAudio = async () => { throw new Error('503'); };
+  const ok = await v.speak('こんにちは。');
+  assert.equal(ok, true);
+  assert.deepEqual(spokenByUtterance, ['こんにちは。']);
+  // 失敗した直後は Gemini の音声を試さない
+  let called = 0;
+  v.fetchAudio = async () => { called++; return null; };
+  await v.speak('もう一度。');
+  assert.equal(called, 0);
+});
