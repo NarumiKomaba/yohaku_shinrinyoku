@@ -484,3 +484,15 @@ test('walkCue_whileMovingAndSilentLongEnough_speaksAtMostFromPool', async (t) =>
   assert.ok(cues.length >= 1, '240 秒の無言のあと声かけ');
   assert.ok(cues.length <= 2);
 });
+
+test('finish_midWalk_emitsFinishingBeforeClosingIsSpoken', async (t) => {
+  const c = setup(t);
+  await startWalking(c);
+  let finishing = 0;
+  c.engine.addEventListener('finishing', () => { finishing++; });
+  c.engine.finish();
+  assert.equal(finishing, 1, '「はい」を押した瞬間に通知する（締めの言葉を待たない）');
+  assert.ok(!c.events.some((e) => e.type === 'finished'));
+  await flush();
+  assert.ok(c.events.some((e) => e.type === 'finished'));
+});
