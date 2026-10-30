@@ -421,7 +421,11 @@ function bindEngine(engine) {
     app.activity = detail.type ? detail : null;
     renderActivity();
   });
-  engine.addEventListener('listen', ({ detail }) => { $('#listen-cue').hidden = !detail.on; });
+  engine.addEventListener('listen', ({ detail }) => {
+    const cue = $('#listen-cue');
+    cue.hidden = !detail.on;
+    cue.textContent = S()[detail.ready ? 'listenCue' : 'listenPrep'] ?? '';
+  });
   // 聞き取りが使えない端末では、自動で聞けないことを短く伝える
   $('#listen-note').hidden = voice.canListen;
   // 区切りで自動で聞いた声は、質問として扱う（話す速さの指示は ask() 内で端末内に処理）

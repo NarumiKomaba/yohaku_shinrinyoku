@@ -16,7 +16,8 @@ const LINGER_MAX = 2;
 const ASK_MIC_MS = 8000; // 声の返事を待つ時間
 const ASK_TIMEOUT_MS = 12000; // 無返事なら静かに見守る
 const CLOSE_DWELL_SEC = 30; // 全 Spot 訪問後、最後の Spot でこれだけ止まったら締めへ
-const AUTO_LISTEN_MS = 4000; // 区切りで自動で聞く時間
+const AUTO_LISTEN_MS = 8000; // 区切りで自動で聞く時間（声が来ていなければここで止める）
+const AUTO_LISTEN_MAX_MS = 15000; // 声が来たあと、話し終わるのを待つ上限
 const MIN_HEARD_CHARS = 2; // これ未満は雑音とみなして無視
 const TOPIC_PAUSE_MS = 1200; // 話題の切れ目の間
 const SENTENCE_PAUSE_MS = 700; // 文と文の間（narrate の各文の間）
@@ -103,7 +104,7 @@ export class WalkEngine extends EventTarget {
   pause() {
     if (this.ended || this.paused) return;
     this.paused = true;
-    this._interrupt();
+    this._interrupt('pause');
     this._setStatus('paused');
   }
 
@@ -118,20 +119,34 @@ export class WalkEngine extends EventTarget {
   beginTalk() {
     if (this.ended) return;
     this.talking = true;
+    this._stopAfterSpeech = false;
     const head = this.queue[0];
     if (head && head.kind === 'silence' && head.introDone && !head.over) {
       head.skip = true;
       this.log('silence_end', { reason: 'talk', actualSec: Math.round((this.now() - head.startedAt) / 1000) });
     }
     if (head && head.kind === 'ask') head.skip = true; // 自由に質問されたら、こちらからの質問は取り下げる
-    this._interrupt();
+    this._interrupt('talk');
     this._setStatus('listening');
   }
 
   // 読み上げる文は字幕としても通知する（Eyes Up を妨げない範囲で、音が出せなくても内容が分かるように）
-  _speak(text) {
+  async _speak(text) {
     if (text) this._emit('caption', { text });
-    return this.voice.speak(text);
+    this._speaking = true;
+    let ok;
+    try {
+      ok = await this.voice.speak(text);
+    } finally {
+      this._speaking = false;
+    }
+    // スポットを離れた: 今の文は読み終えたので、ここで止める
+    if (this._stopAfterSpeech) {
+      this._stopAfterSpeech = false;
+      this.log('speech_stop', { reason: 'spot-left', deferred: true });
+      return false;
+    }
+    return ok;
   }
 
   async answer(text) {
@@ -162,7 +177,7 @@ export class WalkEngine extends EventTarget {
     if (this.ended) return;
     this.paused = false;
     this.talking = false;
-    this._interrupt();
+    this._interrupt('finish');
     this._leaveSpot(true);
     this.queue = this._closingSteps();
     this._emit('finishing', {});
@@ -172,7 +187,7 @@ export class WalkEngine extends EventTarget {
   abort() {
     this.ended = true;
     clearInterval(this._tickTimer);
-    this._interrupt();
+    this._interrupt('abort');
   }
 
   // シミュレーション用: 止まっている滞在秒数を進める
@@ -327,7 +342,11 @@ export class WalkEngine extends EventTarget {
     const mine = (st) => st.spot === spot;
     const headMine = head && mine(head);
     this.queue = this.queue.filter((st, i) => !mine(st) || (i === 0 && st.kind === 'narrate'));
-    if (headMine && head.kind !== 'narrate') this._interrupt();
+    if (headMine && head.kind !== 'narrate') {
+      // 読んでいる最中なら、その文は最後まで読む（読み終えたら _speak が止める）。待っているだけなら、すぐ止める
+      if (this._speaking) this._stopAfterSpeech = true;
+      else this._interrupt('spot-left');
+    }
     if (!this.closing) this._setPhase('walk');
     this._loop();
   }
@@ -513,13 +532,31 @@ export class WalkEngine extends EventTarget {
   async _autoListen() {
     if (!this.settings.autoListen || !this.voice.canListen || this.paused || this.talking || this.ended || this.closing) return;
     this._autoListening = true;
-    this._emit('listen', { on: true });
-    listenCue();
-    const timer = setTimeout(() => this.voice.stopListening?.(), AUTO_LISTEN_MS);
+    this._listenStop = null;
+    const t0 = this.now();
+    const rec = { started: false, spoke: false, error: null, startMs: null };
+    this._emit('listen', { on: true, ready: false });
+    // 画面の「聞いています」と合図の音は、聞き取りが本当に始まってから
+    const onStart = () => {
+      if (rec.started) return;
+      rec.started = true;
+      rec.startMs = this.now() - t0;
+      this._emit('listen', { on: true, ready: true });
+      listenCue();
+    };
+    // 声が来ていなければ AUTO_LISTEN_MS で止める。来ていれば、話し終わる（最終の結果が来る）まで上限つきで待つ
+    const check = () => {
+      if (rec.spoke && this.now() - t0 < AUTO_LISTEN_MAX_MS) { timer = setTimeout(check, 500); return; }
+      this._listenStop ||= 'timeout';
+      this.voice.stopListening?.();
+    };
+    let timer = setTimeout(check, AUTO_LISTEN_MS);
     let text = '';
+    let thrown = null;
     try {
-      text = (await this.voice.listen()) || '';
+      text = (await this.voice.listen({ onStart, onSpeech: () => { rec.spoke = true; }, onError: (name) => { rec.error = name; } })) || '';
     } catch (e) {
+      thrown = e.message;
       this.log('error', { where: 'stt-auto', message: e.message });
       // マイクの許可が無いときだけ以後は試さない。no-speech / aborted / network などは一時的なので続ける
       if (/not-allowed/.test(e.message)) this.settings.autoListen = false;
@@ -529,6 +566,11 @@ export class WalkEngine extends EventTarget {
       this._emit('listen', { on: false });
     }
     text = text.trim();
+    // 文の中身は記録しない（文字数だけ）
+    this.log('stt_listen', {
+      purpose: 'auto', started: rec.started, startMs: rec.startMs, spoke: rec.spoke || text.length > 0,
+      reason: thrown || this._listenStop || rec.error || 'ended', chars: text.length,
+    });
     if (text.length < MIN_HEARD_CHARS || this.paused || this.talking || this.ended) return;
     this.log('stt_used', { ok: true, purpose: 'auto' });
     this._emit('heard', { text });
@@ -678,12 +720,14 @@ export class WalkEngine extends EventTarget {
     });
   }
 
-  _interrupt() {
+  _interrupt(reason = 'other') {
+    this._stopAfterSpeech = false;
+    if (this._speaking) this.log('speech_stop', { reason });
     this.voice.cancel();
     this._cancelWait?.();
     this._silence?.finish('interrupted');
     this._ask?.resolve({ interrupted: true });
-    if (this._autoListening) this.voice.stopListening?.();
+    if (this._autoListening) { this._listenStop ||= 'stopped'; this.voice.stopListening?.(); }
   }
 
   // 1 秒ごと: 時間到達の確認 / 締め / linger / Spot 間の声かけ

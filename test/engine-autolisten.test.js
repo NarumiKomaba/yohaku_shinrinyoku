@@ -27,13 +27,14 @@ class FakeVoice {
   }
   speak(t) { this.spoken.push(t); return Promise.resolve(true); }
   cancel() {}
-  listen() {
+  listen(hooks = {}) {
     this.listens++;
+    this.hooks = hooks;
     if (this.failListen) return Promise.reject(new Error(this.failListen === true ? 'stt_not-allowed' : this.failListen));
     return new Promise((res) => { this._l = res; });
   }
   pause(ms) { this.pauses.push(ms); return Promise.resolve(true); }
-  stopListening() { this.stops++; this.heard(''); }
+  stopListening() { this.stops++; this.heard(this.partial || ''); this.partial = ''; }
   heard(text) { const r = this._l; this._l = null; if (r) r(text); }
 }
 
@@ -110,10 +111,10 @@ test('autoListen_afterSpotNarration_opensMicAndEmitsHeard', async (t) => {
   assert.ok(c.logs.some((l) => l.type === 'stt_used' && l.purpose === 'auto' && l.ok === true));
 });
 
-test('autoListen_withoutSpeech_stopsAfter4sAndEmitsNoHeard', async (t) => {
+test('autoListen_withoutSpeech_stopsAfter8sAndEmitsNoHeard', async (t) => {
   const c = setup(t);
   await enterA(c);
-  await c.advance(3_500);
+  await c.advance(7_500);
   assert.equal(c.voice.stops, 0);
   await c.advance(700);
   assert.equal(c.voice.stops, 1);
@@ -255,6 +256,96 @@ test('autoListen_whenFinishCalledWhileListening_stopsTheMic', async (t) => {
   await flush();
   assert.ok(c.voice.stops >= 1);
   assert.equal(c.heard().length, 0);
+});
+
+test('autoListen_timeoutWithPartialText_usesPartialText', async (t) => {
+  const c = setup(t);
+  await enterA(c);
+  c.voice.hooks.onStart();
+  c.voice.hooks.onSpeech();
+  c.voice.partial = 'この木は何ですか';
+  await c.advance(15_500); // 声が来ているので 8 秒では止めず、上限（15 秒）で止める
+  assert.equal(c.voice.stops, 1);
+  assert.deepEqual(c.heard().map((e) => e.text), ['この木は何ですか']);
+  const l = c.logs.filter((x) => x.type === 'stt_listen').at(-1);
+  assert.equal(l.reason, 'timeout');
+  assert.equal(l.chars, 8);
+  assert.equal(l.started, true);
+  assert.equal(l.spoke, true);
+  assert.ok(!JSON.stringify(c.logs).includes('この木は何ですか'), '文の中身は記録しない');
+});
+
+test('autoListen_speechStarted_isNotStoppedAt8s', async (t) => {
+  const c = setup(t);
+  await enterA(c);
+  c.voice.hooks.onSpeech();
+  await c.advance(9_000);
+  assert.equal(c.voice.stops, 0);
+});
+
+test('autoListen_micCue_showsReadyOnlyAfterStart', async (t) => {
+  const c = setup(t);
+  await enterA(c);
+  assert.equal(c.events.find((e) => e.type === 'listen').ready, false);
+  c.voice.hooks.onStart();
+  assert.equal(c.events.filter((e) => e.type === 'listen' && e.ready).length, 1);
+});
+
+test('autoListen_stoppedByUs_withAbortedFlag_isNotAnErrorAndKeepsPartial', async (t) => {
+  const c = setup(t);
+  await enterA(c);
+  c.voice.hooks.onError('aborted');
+  c.voice.heard('途中まで聞けた言葉');
+  await flush();
+  assert.equal(c.logs.filter((l) => l.type === 'error').length, 0);
+  assert.deepEqual(c.heard().map((e) => e.text), ['途中まで聞けた言葉']);
+});
+
+// ---------- スポットを離れても今の文は最後まで読む ----------
+test('leaveSpot_whileSpeakingSentence_finishesItBeforeStopping', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  let release = null;
+  const cancels = [];
+  const voice = {
+    canListen: false,
+    speak(text) { return text === '見てみましょう。' || !text.includes('見') ? Promise.resolve(true) : new Promise((r) => { release = r; }); },
+    cancel() { cancels.push(1); },
+    pause: () => Promise.resolve(true),
+  };
+  const logs = [];
+  const engine = new WalkEngine({
+    voice, scenario, spots: [A, B], lang: 'ja', checkin: { state: 'ok', desire: 'nature' }, settings: { autoListen: false },
+    narrate: async () => ({ say: '見てみましょう。', ask: null, next: 'interaction', interaction: 'LOOK', silenceSec: null, usedMaterialIds: [] }),
+    now: () => 9_000_000, log: (type, d) => logs.push({ type, ...d }),
+  });
+  t.after(() => engine.abort());
+  engine.start();
+  await flush();
+  engine.onPosition(...at(A));
+  await flush();
+  // 指示の文を読んでいる最中（止まったまま）にスポットを離れる
+  engine.voice.speak = (text) => new Promise((r) => { release = r; void text; });
+  engine.queue = [{ kind: 'interaction', type: 'LOOK', text: '空を見上げます。', spot: A }];
+  engine._loop();
+  await flush();
+  assert.ok(release, '指示の文を読んでいる');
+  const before = cancels.length;
+  engine.onPosition(...at(B));
+  await flush();
+  assert.equal(cancels.length, before, '読んでいる文は止めない');
+  assert.equal(logs.filter((l) => l.type === 'speech_stop').length, 0);
+  release(true);
+  await flush();
+  assert.ok(logs.some((l) => l.type === 'speech_stop' && l.reason === 'spot-left' && l.deferred), '読み終えてから止める');
+  assert.ok(!logs.some((l) => l.type === 'interaction' && l.kind === 'LOOK'), 'そのスポットの残りは捨てる');
+});
+
+test('pause_whileSpeaking_logsReasonAndStopsAtOnce', async (t) => {
+  const c = setup(t);
+  await begin(c);
+  c.engine._speaking = true;
+  c.engine.pause();
+  assert.deepEqual(c.logs.find((l) => l.type === 'speech_stop'), { type: 'speech_stop', reason: 'pause' });
 });
 
 // ---------- rateCommand（public/js/commands.js）----------
