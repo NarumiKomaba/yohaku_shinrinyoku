@@ -181,16 +181,27 @@ export class Voice {
   }
 
   // 1 回分の発話を認識して文字列を返す
-  listen() {
+  // 途中の言葉（interim）も覚えておき、時間切れ・aborted で終わっても、聞けた分は返す。
+  // hooks: onStart() 聞き取りが本当に始まった / onSpeech() 声が来た / onError(name) 聞き取りのエラー名
+  listen({ onStart, onSpeech, onError } = {}) {
     return new Promise((resolve, reject) => {
       if (!Recognition) return reject(new Error('stt_unsupported'));
       const r = new Recognition();
       r.lang = this.lang === 'en' ? 'en-US' : 'ja-JP';
-      r.interimResults = false;
+      r.interimResults = true;
       r.maxAlternatives = 1;
       let text = '';
-      r.onresult = (e) => { text = Array.from(e.results).map((x) => x[0].transcript).join(''); };
-      r.onerror = (e) => (e.error === 'no-speech' ? resolve('') : reject(new Error(`stt_${e.error}`)));
+      let spoke = false;
+      const heard = () => { if (!spoke) { spoke = true; onSpeech?.(); } };
+      r.onstart = () => onStart?.();
+      r.onspeechstart = heard;
+      r.onresult = (e) => { text = Array.from(e.results).map((x) => x[0].transcript).join(''); if (text) heard(); };
+      r.onerror = (e) => {
+        onError?.(e.error);
+        // 聞こえなかった / こちらから止めた（aborted）は失敗ではない。聞けた分があればそれを返す
+        if (e.error === 'no-speech' || e.error === 'aborted' || text.trim()) return resolve(text.trim());
+        reject(new Error(`stt_${e.error}`));
+      };
       r.onend = () => { this._recognizer = null; resolve(text.trim()); };
       this._recognizer = r;
       r.start();

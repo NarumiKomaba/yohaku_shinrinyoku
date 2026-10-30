@@ -25,6 +25,8 @@
 - `silence_end` — Intentional Silence 終了
 - `question_asked` — 来園者が自由質問
 - `stt_used` — 音声認識使用
+- `stt_listen` — 自動聞き取り1回の結果（started・startMs・spoke・reason：timeout / stopped / エラー名 / ended・chars。文の中身は記録しない）
+- `speech_stop` — 読み上げを止めた理由（spot-left / talk / pause / finish / abort）
 - `tts` — 音声読み上げ
 - `reflection` — ふりかえり回答
 - `survey` — アンケート回答
