@@ -33,7 +33,7 @@ const sourceOf = (req) => ipBucket(clientIp(req, TRUSTED_PROXY_HOPS));
 
 // /api/events で受け付ける種類（体験アプリが送るものだけ）。llm_usage・purchase などはサーバーだけが書く
 const CLIENT_EVENT_TYPES = new Set([
-  'session_start', 'checkin', 'spot_reached', 'interaction', 'silence_end', 'question_asked', 'stt_used', 'tts',
+  'session_start', 'checkin', 'spot_reached', 'interaction', 'silence_end', 'question_asked', 'stt_used', 'stt_listen', 'speech_stop', 'tts',
   'speech_rate', 'guide_ask', 'guide_ask_reply', 'reflection', 'survey', 'session_complete', 'error',
 ]);
 const MAX_EVENTS_PER_SESSION = 300;
