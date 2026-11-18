@@ -11,6 +11,15 @@
 <body>
   <main id="app">
 
+    <!-- 0. 言語の選択（最初の1回だけ） -->
+    <section class="screen" id="screen-lang" hidden>
+      <h1 class="lang-title">言語 / Language</h1>
+      <div class="stack lang-pick">
+        <button type="button" class="btn primary lang-big" data-pick-lang="ja" lang="ja">日本語</button>
+        <button type="button" class="btn primary lang-big" data-pick-lang="en" lang="en">English</button>
+      </div>
+    </section>
+
     <!-- 1. 購入コード / 言語 -->
     <section class="screen" id="screen-welcome">
       <div class="lang-switch" role="group" aria-label="Language">

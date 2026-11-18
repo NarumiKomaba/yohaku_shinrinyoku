@@ -166,3 +166,8 @@ legend { font-weight: 600; padding: 0 6px; }
 .vc .link { align-self: flex-start; font-size: .85rem; }
 
 .activity { margin: 4px 0 0; font-size: .85rem; color: #a9c7a4; font-variant-numeric: tabular-nums; }
+
+/* 言語の選択 */
+.lang-title { text-align: center; font-size: 1.1rem; margin: 48px 0 24px; }
+.lang-pick { gap: 16px; }
+.lang-big { padding: 28px 16px; font-size: 1.4rem; width: 100%; }
