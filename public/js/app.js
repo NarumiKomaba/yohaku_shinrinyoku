@@ -9,8 +9,13 @@ import { rateCommand } from './commands.js';
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
+function savedLang() {
+  const l = localStorage.getItem('lang');
+  return l === 'ja' || l === 'en' ? l : null;
+}
+
 const app = {
-  lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
+  lang: savedLang() || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
   token: null,
   scenario: null,
   spots: null,
@@ -163,10 +168,16 @@ async function api(path, body) {
 }
 
 // ---------- 1. 購入コード ----------
-$$('.lang-switch .chip').forEach((b) => b.addEventListener('click', () => {
-  app.lang = b.dataset.lang;
-  localStorage.setItem('lang', app.lang);
+function setLang(lang) {
+  app.lang = lang;
+  localStorage.setItem('lang', lang);
   applyI18n();
+}
+$$('.lang-switch .chip').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
+// 最初の言語選択（選んだら覚えて、次からは聞かない）
+$$('[data-pick-lang]').forEach((b) => b.addEventListener('click', () => {
+  setLang(b.dataset.pickLang);
+  show('screen-welcome');
 }));
 
 $('#buy').addEventListener('click', async () => {
@@ -238,7 +249,7 @@ async function startVoiceCheckin() {
   if (!voice.canSpeak) return;
   if (!voice.canListen) return readCheckinQuestions(); // マイクが使えない端末（iPhone の Safari・アプリ内ブラウザなど）では、質問を読み上げてチップで答えてもらう
   vc = {
-    voice, S, cancelled: false, onButton: null, cancelHook: null,
+    voice, S, lang: app.lang, cancelled: false, onButton: null, cancelHook: null,
     say: (text) => { $('#vc-caption').textContent = text; return voice.speak(text); },
     setStatus: (t) => { $('#vc-status').textContent = t; },
     showConfirm: (on) => { $('#vc-confirm').hidden = !on; },
@@ -573,7 +584,7 @@ async function ask(question, input) {
     answer = res.answer;
   } catch (e) {
     log('error', { where: 'ask', message: e.message });
-    answer = app.lang === 'en' ? 'Sorry, I could not answer just now. Let\'s keep walking.' : 'すみません、いまはお答えできませんでした。歩みを続けましょう。';
+    answer = S().askFailed;
   }
   app.history.push({ role: 'user', text: question }, { role: 'model', text: answer });
   await engine.answer(answer);
@@ -675,7 +686,7 @@ function renderSummary() {
   const f = app.finishedInfo || { elapsedSec: 0, visited: [], counts: { silences: 0 } };
   const rows = [
     [S().summaryDuration, `${Math.max(1, Math.round(f.elapsedSec / 60))} ${S().minutes}`],
-    [S().summarySpots, f.visited.map((id) => tr(app.spots.find((s) => s.id === id)?.name)).join('、') || '—'],
+    [S().summarySpots, f.visited.map((id) => tr(app.spots.find((s) => s.id === id)?.name)).join(app.lang === 'en' ? ', ' : '、') || '—'],
     [S().summaryPauses, `${f.counts.silences} ${S().times}`],
   ];
   $('#summary').replaceChildren(...rows.flatMap(([k, v]) => {
@@ -696,12 +707,12 @@ $('#restart').addEventListener('click', () => location.reload());
   ]);
   // Gemini の音声で読み上げる（セッションが始まってから呼ばれる。失敗したら端末の音声）
   if (config.tts === true) {
-    voice.fetchAudio = async (text) => (app.token ? (await api('/api/tts', { text })).data : null);
+    voice.fetchAudio = async (text) => (app.token ? (await api('/api/tts', { text, lang: app.lang })).data : null);
   }
   const demoCode = typeof config.demoCode === 'string' ? config.demoCode : '';
   app.access = { purchaseEnabled: config.purchaseEnabled === true, demoPublic: config.demoPublic === true && Boolean(demoCode), demoCode };
   app.scenario = scenario;
   app.spots = spots.spots;
   applyI18n();
-  show('screen-welcome');
+  show(savedLang() ? 'screen-welcome' : 'screen-lang');
 })();

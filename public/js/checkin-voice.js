@@ -68,7 +68,7 @@ async function flow(vc) {
       if (fresh.length && followups < MAX_FOLLOWUPS) {
         followups++;
         fresh.forEach((k) => asked.add(k));
-        await vc.say(fresh.map((k) => S().vcMissing[k]).join(''));
+        await vc.say(fresh.map((k) => S().vcMissing[k]).join(vc.lang === 'en' ? ' ' : ''));
         res = await parse(vc, (await hearText(vc)).text);
         continue;
       }

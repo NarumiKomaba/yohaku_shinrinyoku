@@ -303,7 +303,7 @@ const TTS_MAX_CHARS = 600;
 const ttsCache = new Map(); // key -> { mimeType, data }
 const ttsCacheLimits = { entries: 200, bytes: 32 * 1024 * 1024 };
 let ttsCacheBytes = 0;
-const ttsKey = (text) => crypto.createHash('sha256').update(JSON.stringify([text, TTS_VOICE, TTS_STYLE, TTS_MODEL])).digest('hex');
+const ttsKey = (text, lang) => crypto.createHash('sha256').update(JSON.stringify([text, lang, TTS_VOICE, TTS_STYLE, TTS_MODEL])).digest('hex');
 function ttsCacheGet(key) {
   const v = ttsCache.get(key);
   if (v) { ttsCache.delete(key); ttsCache.set(key, v); } // 新しい側へ
@@ -328,7 +328,8 @@ module.exports = {
     const b = await readBody(req, WALK_BODY_LIMIT);
     const text = clip(b.text, TTS_MAX_CHARS).trim();
     if (!text) throw httpError(400, 'empty');
-    const key = ttsKey(text);
+    const lang = b.lang === 'en' ? 'en' : 'ja';
+    const key = ttsKey(text, lang);
     const hit = ttsCacheGet(key);
     if (hit) return { mimeType: hit.mimeType, data: hit.data }; // 使い回し：Gemini を呼ばず、回数にも上限にも数えない
     if (bump(ttsCounts, s.sessionId) > TTS_MAX_PER_SESSION) throw httpError(429, 'tts_limit');
@@ -344,7 +345,7 @@ module.exports = {
         speech: { model: TTS_MODEL, voice: TTS_VOICE }, timeoutMs: 15000,
       });
       if (!audio) throw new Error('no audio');
-      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'tts', model: TTS_MODEL, ...usage, costJpy: costJpy(usage, 'tts'), latencyMs: Date.now() - t0 }]);
+      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'tts', lang, model: TTS_MODEL, ...usage, costJpy: costJpy(usage, 'tts'), latencyMs: Date.now() - t0 }]);
       const raw = Buffer.from(audio.data, 'base64');
       // 3.x は RIFF ヘッダー付きの WAV で返る。ヘッダーなしの PCM（2.5・AUDIO_L16）だけ WAV にする
       const isWav = raw.subarray(0, 4).toString() === 'RIFF' || /^audio\/(x-)?wav\b/i.test(audio.mimeType || '');
@@ -353,7 +354,7 @@ module.exports = {
       ttsCachePut(key, out);
       return { ...out };
     } catch (e) {
-      if (e.code !== 'tts_daily_limit') await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-tts', message: e.message }]);
+      if (e.code !== 'tts_daily_limit') await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-tts', lang, message: e.message }]);
       throw httpError(503, 'tts_unavailable');
     }
   },
@@ -382,10 +383,10 @@ module.exports = {
       if (ASK_MAX_PER_SESSION && bump(askCounts, s.sessionId) > ASK_MAX_PER_SESSION) throw new Error('ask limit');
       const t0 = Date.now();
       const { text, usage } = await callGemini({ system: askSystemPrompt({ lang, spot, spots: allSpots, checkin, date, knowledge: allKnowledge }), contents });
-      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'ask', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0, ...(LOG_QUESTION_TEXT ? { question: q } : {}) }]);
+      await appendEvents([{ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'ask', lang, model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0, ...(LOG_QUESTION_TEXT ? { question: q } : {}) }]);
       return { answer: text || fallbackAnswer(lang, knowledge), sources: knowledge.map((c) => c.id) };
     } catch (e) {
-      await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-ask', message: e.message }]);
+      await appendEvents([{ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-ask', lang, message: e.message }]);
       return { answer: fallbackAnswer(lang, knowledge), sources: knowledge.map((c) => c.id), fallback: true };
     }
   },
@@ -411,11 +412,11 @@ module.exports = {
         system: checkinSystemPrompt(lang), contents: [{ role: 'user', parts: [{ text: JSON.stringify({ transcript, current: cur }) }] }],
         json: true, maxTokens: 300, temperature: 0.2, timeoutMs: 7000,
       });
-      events.push({ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'checkin_parse', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 });
+      events.push({ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'checkin_parse', lang, model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 });
       raw = parseJson(text);
       if (!raw || typeof raw !== 'object') throw new Error('bad checkin response');
     } catch (e) {
-      events.push({ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-checkin', message: e.message });
+      events.push({ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-checkin', lang, message: e.message });
       raw = { ...keywordCheckin(transcript), note: transcript };
       fallback = true;
     }
@@ -434,7 +435,7 @@ module.exports = {
     if (!desire) missing.push('desire');
     if (durationMin === undefined) missing.push('durationMin');
     const confirmText = (!fallback && clip(raw.confirmText, 160).trim()) || confirmTextFor(lang, { durationMin, note });
-    await appendEvents([...events, { type: 'checkin_parse', ts: now(), sessionId: s.sessionId, latencyMs: Date.now() - t0, fallback, missing }]);
+    await appendEvents([...events, { type: 'checkin_parse', ts: now(), sessionId: s.sessionId, lang, latencyMs: Date.now() - t0, fallback, missing }]);
     return { state, desire, durationMin: durationMin === undefined ? null : durationMin, note, missing, confirmText, fallback };
   },
 
@@ -457,13 +458,13 @@ module.exports = {
         system: narrateSystemPrompt(lang), contents: [{ role: 'user', parts: [{ text: JSON.stringify(ctx) }] }],
         json: true, maxTokens: 600, temperature: 0.7, timeoutMs: 7000,
       });
-      events.push({ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'narrate', model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 });
+      events.push({ type: 'llm_usage', ts: now(), sessionId: s.sessionId, purpose: 'narrate', lang, model: MODEL, ...usage, costJpy: costJpy(usage), latencyMs: Date.now() - t0 });
       result = normalizeNarrate(parseJson(text), ctx, spot);
     } catch (e) {
-      events.push({ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-narrate', message: e.message });
+      events.push({ type: 'error', ts: now(), sessionId: s.sessionId, where: 'llm-narrate', lang, message: e.message });
       result = fallbackNarrate(ctx, spot);
     }
-    await appendEvents([...events, { type: 'narrate', ts: now(), sessionId: s.sessionId, trigger, spotId: spot ? spot.id : null, latencyMs: Date.now() - t0, fallback: result.fallback }]);
+    await appendEvents([...events, { type: 'narrate', ts: now(), sessionId: s.sessionId, lang, trigger, spotId: spot ? spot.id : null, latencyMs: Date.now() - t0, fallback: result.fallback }]);
     return result;
   },
 };
