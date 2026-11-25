@@ -395,6 +395,7 @@ async function startWalk({ mode, silenceEnd }) {
         onMove: (lat, lng, acc) => app.engine?.onPosition(lat, lng, acc),
         totalMin: app.checkin.durationMin || null,
         isSpotDone: spotFinished,
+        nextSpot: () => app.engine?.nextSpot()?.spot || null,
         onAutoChange: renderSimAuto,
       });
       renderSimAuto(true);

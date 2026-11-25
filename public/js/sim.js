@@ -40,7 +40,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 import { createAutoWalker } from './autowalk.js';
 
-export async function initSim({ container, spots, lang, onMove, totalMin = null, isSpotDone = () => true, onAutoChange = () => {} }) {
+export async function initSim({ container, spots, lang, onMove, totalMin = null, isSpotDone = () => true, nextSpot = null, onAutoChange = () => {} }) {
   const L = await loadLeaflet();
   const ordered = spots.filter((s) => s.enabled !== false).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   const start = { lat: ordered[0].lat + 0.0012, lng: ordered[0].lng + 0.0009 };
@@ -60,7 +60,7 @@ export async function initSim({ container, spots, lang, onMove, totalMin = null,
   let lastSent = 0;
   const send = () => { lastSent = Date.now(); onMove(pos.lat, pos.lng, 5); };
   // 自動で歩く（既定はオン）。手でつかんだら手動を優先し、切りかえで自動に戻す
-  const walker = createAutoWalker({ start, spots: ordered, totalMin, isSpotDone });
+  const walker = createAutoWalker({ start, spots: ordered, totalMin, isSpotDone, nextSpot });
   let auto = true;
   const setAuto = (on) => {
     auto = on;

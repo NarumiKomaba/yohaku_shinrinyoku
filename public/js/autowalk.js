@@ -1,5 +1,5 @@
 // デモ用の自動歩行（画面に依存しない計算だけ）。
-// スポットを order の順に、ふつうの歩く速さで進み、着いたら案内などが終わるまでその場で待つ。早送りはしない。
+// スポットを、エンジンが「次」と案内する順（渡されなければ order の順）に、ふつうの歩く速さで進み、着いたら案内などが終わるまでその場で待つ。早送りはしない。
 const M_PER_DEG_LAT = 111195;
 export const MIN_SPEED_MPS = 1.1;
 export const MAX_SPEED_MPS = 1.3;
@@ -31,23 +31,34 @@ export function planAutoWalk(start, spots, totalMin) {
 }
 
 // isSpotDone(spot): エンジンがそのスポットを訪れて、案内・問いかけ・静かな時間を終えたら true
-export function createAutoWalker({ start, spots, totalMin = null, isSpotDone }) {
+// nextSpot(): エンジンが「次は○○です」と案内するスポット（なければ null）。渡されたら order ではなくこの案内の順に歩く
+export function createAutoWalker({ start, spots, totalMin = null, isSpotDone, nextSpot = null }) {
   const plan = planAutoWalk(start, spots, totalMin);
   let pos = { ...start };
-  let idx = 0;
+  let current = null; // いま向かっている（着いたら待っている）スポット。終わるまで変えない
+  let over = false;
+  let idx = 0; // nextSpot がないときの order の順の位置
   let dwell = 0;
-  const target = () => spots[idx] || null;
+  const target = () => {
+    if (!current && !over) {
+      current = (nextSpot ? nextSpot() : spots[idx++]) || null;
+      if (!current) over = true;
+    }
+    return current;
+  };
 
   return {
     plan,
     get pos() { return { ...pos }; },
-    get finished() { return idx >= spots.length; },
+    get finished() { target(); return over; },
     get targetSpot() { return target(); },
     // 手動で動かしたあとなどに、いまの位置から次の（まだ終わっていない）スポットへ向かい直す
     resume(p) {
       if (p) pos = { lat: p.lat, lng: p.lng };
-      idx = spots.findIndex((s) => !isSpotDone(s));
-      if (idx < 0) idx = spots.length;
+      current = null;
+      over = false;
+      idx = Math.max(0, spots.findIndex((x) => !isSpotDone(x)));
+      if (spots.every(isSpotDone)) idx = spots.length;
       dwell = 0;
     },
     tick(dtSec) {
@@ -64,7 +75,7 @@ export function createAutoWalker({ start, spots, totalMin = null, isSpotDone }) 
       }
       pos = { lat: s.lat, lng: s.lng };
       dwell += dtSec;
-      if (dwell >= plan.dwellSec && isSpotDone(s)) { idx += 1; dwell = 0; }
+      if (dwell >= plan.dwellSec && isSpotDone(s)) { current = null; dwell = 0; }
       return { ...pos };
     },
   };

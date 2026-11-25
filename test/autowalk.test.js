@@ -85,3 +85,40 @@ test('autowalk_resume_headsToFirstUnfinishedSpot', () => {
   w.resume({ lat: spots[1].lat, lng: spots[1].lng });
   assert.equal(w.targetSpot.id, spots[1].id);
 });
+
+test('autowalk_followsEngineNext_arrivesAtAnnouncedSpot', () => {
+  // 疑似エンジン: いちばん近い未訪問のスポットを「次」と案内する（order とは違う順になる）
+  const visited = new Set();
+  const finishAt = {};
+  let t = 0;
+  let w;
+  const metres = (p, s) => Math.hypot((p.lat - s.lat) * 111195, (p.lng - s.lng) * 111195 * Math.cos(s.lat * Math.PI / 180));
+  const nextSpot = () => {
+    const rest = spots.filter((s) => !visited.has(s.id));
+    return rest.sort((a, b) => metres(w.pos, a) - metres(w.pos, b))[0] || null;
+  };
+  const isSpotDone = (s) => finishAt[s.id] !== undefined && t >= finishAt[s.id];
+  w = AW.createAutoWalker({ start: startOf(), spots, isSpotDone, nextSpot });
+  const announced = [];
+  const announcedFrom = new Set();
+  const arrived = [];
+  while (!w.finished && t < 6 * 3600) {
+    const before = w.targetSpot;
+    const p = w.tick(1);
+    t += 1;
+    for (const s of spots) {
+      if (!visited.has(s.id) && metres(p, s) <= s.radius) {
+        visited.add(s.id);
+        arrived.push(s.id);
+        finishAt[s.id] = t + 20;
+      }
+    }
+    if (before && !announcedFrom.has(before.id) && finishAt[before.id] !== undefined && t >= finishAt[before.id]) {
+      announcedFrom.add(before.id);
+      const n = nextSpot();
+      if (n) announced.push(n.id);
+    }
+  }
+  assert.equal(arrived.length, spots.length);
+  assert.deepEqual(arrived.slice(1), announced);
+});
