@@ -1,8 +1,10 @@
 // デモ用の自動歩行（画面に依存しない計算だけ）。
-// スポットを、エンジンが「次」と案内する順（渡されなければ order の順）に、ふつうの歩く速さで進み、着いたら案内などが終わるまでその場で待つ。早送りはしない。
+// スポットを、エンジンが「次」と案内する順（渡されなければ order の順）に、ふつうの歩く速さで進み、着いたら案内などが終わるまでその場で待つ（長くても MAX_DWELL_SEC まで）。早送りはしない。
 const M_PER_DEG_LAT = 111195;
 export const MIN_SPEED_MPS = 1.1;
 export const MAX_SPEED_MPS = 1.3;
+export const SLOW_SPEED_MPS = 1.0; // 時間が余るときに、スポットのあいだをゆっくり歩く下限
+export const MAX_DWELL_SEC = 180; // 1つのスポットにとどまる長さの上限
 const ARRIVE_M = 2; // スポットの中心にこれだけ近づいたら着いたとみなす
 const MIN_DWELL_SEC = 3; // 着いてから最低限待つ秒数（エンジンが着いたことに気づく間）
 
@@ -19,15 +21,13 @@ export function routeLengthM(start, spots) {
   return len;
 }
 
-// 時間を決めたとき（totalMin）は、その時間でだいたい回れるように速さと各スポットで待つ長さを決める
+// 時間を決めたとき（totalMin）は、時間が余りそうならスポットのあいだをゆっくり歩く。それでも余れば早めに最後に着く
 export function planAutoWalk(start, spots, totalMin) {
-  if (!totalMin) return { speedMps: 1.2, dwellSec: MIN_DWELL_SEC };
+  if (!totalMin) return { speedMps: 1.2, dwellSec: MIN_DWELL_SEC, maxDwellSec: MAX_DWELL_SEC };
   const totalSec = totalMin * 60;
   const len = routeLengthM(start, spots);
-  const speedMps = Math.min(MAX_SPEED_MPS, Math.max(MIN_SPEED_MPS, len / (totalSec * 0.5)));
-  const walkSec = len / speedMps;
-  const dwellSec = Math.max(MIN_DWELL_SEC, (totalSec - walkSec) / Math.max(1, spots.length));
-  return { speedMps, dwellSec };
+  const speedMps = Math.min(MAX_SPEED_MPS, Math.max(SLOW_SPEED_MPS, len / (totalSec * 0.5)));
+  return { speedMps, dwellSec: MIN_DWELL_SEC, maxDwellSec: MAX_DWELL_SEC };
 }
 
 // isSpotDone(spot): エンジンがそのスポットを訪れて、案内・問いかけ・静かな時間を終えたら true
@@ -39,9 +39,13 @@ export function createAutoWalker({ start, spots, totalMin = null, isSpotDone, ne
   let over = false;
   let idx = 0; // nextSpot がないときの order の順の位置
   let dwell = 0;
+  let left = null; // 上限で離れた（まだ終わっていない）スポット。すぐに戻らない
   const target = () => {
     if (!current && !over) {
-      current = (nextSpot ? nextSpot() : spots[idx++]) || null;
+      let n = nextSpot ? nextSpot() : spots[idx++];
+      if (n && n === left) n = spots.find((x) => x !== left && !isSpotDone(x)) || null;
+      left = null;
+      current = n || null;
       if (!current) over = true;
     }
     return current;
@@ -75,7 +79,12 @@ export function createAutoWalker({ start, spots, totalMin = null, isSpotDone, ne
       }
       pos = { lat: s.lat, lng: s.lng };
       dwell += dtSec;
-      if (dwell >= plan.dwellSec && isSpotDone(s)) { current = null; dwell = 0; }
+      const done = dwell >= plan.dwellSec && isSpotDone(s);
+      if (done || dwell >= plan.maxDwellSec) {
+        left = done ? null : s;
+        current = null;
+        dwell = 0;
+      }
       return { ...pos };
     },
   };

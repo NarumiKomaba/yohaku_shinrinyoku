@@ -76,7 +76,29 @@ test('autowalk_twentyMinutes_finishesAboutTwentyMinutes', () => {
   const r = simulate({ totalMin: 20, contentSec: 20 });
   assert.deepEqual(r.stops, spots.map((s) => s.id));
   assert.ok(spots.every((s) => r.visited.includes(s.id)));
-  assert.ok(r.t > 20 * 60 * 0.85 && r.t < 20 * 60 * 1.1, `t=${r.t}`);
+  assert.ok(r.t < 20 * 60 * 1.1, `t=${r.t}`);
+});
+
+test('autowalk_sixtyMinutes_neverStaysOverThreeMinutesAtOneSpot', () => {
+  // 案内が10分かかるエンジンでも、1つのスポットに3分を超えてとどまらない
+  const finishAt = {};
+  let t = 0;
+  const isSpotDone = (s) => finishAt[s.id] !== undefined && t >= finishAt[s.id];
+  const w = AW.createAutoWalker({ start: startOf(), spots, totalMin: 60, isSpotDone });
+  assert.ok(w.plan.speedMps >= AW.SLOW_SPEED_MPS && w.plan.speedMps <= AW.MAX_SPEED_MPS);
+  const stay = {};
+  while (!w.finished && t < 6 * 3600) {
+    const s = w.targetSpot;
+    const p = w.tick(1);
+    t += 1;
+    if (p.lat === s.lat && p.lng === s.lng) {
+      if (finishAt[s.id] === undefined) finishAt[s.id] = t + 600;
+      stay[s.id] = (stay[s.id] || 0) + 1;
+    }
+  }
+  assert.equal(Object.keys(stay).length, spots.length);
+  for (const [id, sec] of Object.entries(stay)) assert.ok(sec <= 180 + 1, `${id}: ${sec}s`);
+  assert.ok(t < 60 * 60, `t=${t}`);
 });
 
 test('autowalk_resume_headsToFirstUnfinishedSpot', () => {
