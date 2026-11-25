@@ -393,7 +393,12 @@ async function startWalk({ mode, silenceEnd }) {
       app.sim = await initSim({
         container: $('#sim-map'), spots: app.spots, lang: app.lang,
         onMove: (lat, lng, acc) => app.engine?.onPosition(lat, lng, acc),
+        totalMin: app.checkin.durationMin || null,
+        isSpotDone: spotFinished,
+        nextSpot: () => app.engine?.nextSpot()?.spot || null,
+        onAutoChange: renderSimAuto,
       });
+      renderSimAuto(true);
       clearInterval(app.simReadout);
       app.simReadout = setInterval(renderSimReadout, 500);
     } catch (e) {
@@ -497,6 +502,16 @@ function renderActivity() {
   el.textContent = `${S().activityNow}${a.label}${left == null ? '' : S().activityLeft.replace('{s}', left)}`;
 }
 setInterval(() => { if (app.activity) renderActivity(); }, 1000);
+
+// 自動で歩く間、そのスポットの案内・問いかけ・静かな時間が終わったか
+function spotFinished(spot) {
+  const e = app.engine;
+  if (!e || e.ended) return true;
+  if (!e.visited.has(spot.id)) return false;
+  return !(e.currentSpot?.id === spot.id && (e.paused || e.talking || e.queue.length || e.status !== 'idle'));
+}
+function renderSimAuto(on) { $('#sim-auto').textContent = on ? S().simAutoOn : S().simAutoOff; }
+$('#sim-auto').addEventListener('click', () => { if (app.sim) app.sim.setAuto(!app.sim.isAuto()); });
 
 function renderSimReadout() {
   if (!app.engine) return;

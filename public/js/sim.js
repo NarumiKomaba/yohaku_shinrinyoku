@@ -38,7 +38,9 @@ const DRAG_THROTTLE_MS = 250;
 // Leaflet の tooltip は HTML として描画されるため、地名（OSM 由来など）はエスケープする
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-export async function initSim({ container, spots, lang, onMove }) {
+import { createAutoWalker } from './autowalk.js';
+
+export async function initSim({ container, spots, lang, onMove, totalMin = null, isSpotDone = () => true, nextSpot = null, onAutoChange = () => {} }) {
   const L = await loadLeaflet();
   const ordered = spots.filter((s) => s.enabled !== false).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   const start = { lat: ordered[0].lat + 0.0012, lng: ordered[0].lng + 0.0009 };
@@ -57,6 +59,15 @@ export async function initSim({ container, spots, lang, onMove }) {
   let pos = { ...start };
   let lastSent = 0;
   const send = () => { lastSent = Date.now(); onMove(pos.lat, pos.lng, 5); };
+  // 自動で歩く（既定はオン）。手でつかんだら手動を優先し、切りかえで自動に戻す
+  const walker = createAutoWalker({ start, spots: ordered, totalMin, isSpotDone, nextSpot });
+  let auto = true;
+  const setAuto = (on) => {
+    auto = on;
+    if (on) walker.resume(pos);
+    onAutoChange(on);
+  };
+  me.on('dragstart', () => { if (auto) setAuto(false); });
   me.on('drag', (e) => {
     pos = { lat: e.latlng.lat, lng: e.latlng.lng };
     if (Date.now() - lastSent >= DRAG_THROTTLE_MS) send();
@@ -66,8 +77,18 @@ export async function initSim({ container, spots, lang, onMove }) {
     pos = { lat: p.lat, lng: p.lng };
     send();
   });
-  const timer = setInterval(send, 1000); // 止まっている間も同じ位置を送り続ける
+  let lastTick = Date.now();
+  const timer = setInterval(() => { // 止まっている間も同じ位置を送り続ける
+    const now = Date.now();
+    const dt = (now - lastTick) / 1000;
+    lastTick = now;
+    if (auto) {
+      pos = walker.tick(dt);
+      me.setLatLng([pos.lat, pos.lng]);
+      send();
+    } else if (now - lastSent >= 1000) send();
+  }, 250);
 
   setTimeout(() => { map.invalidateSize(); send(); }, 0);
-  return { stop: () => clearInterval(timer), destroy: () => { clearInterval(timer); map.remove(); } };
+  return { setAuto, isAuto: () => auto, stop: () => clearInterval(timer), destroy: () => { clearInterval(timer); map.remove(); } };
 }
